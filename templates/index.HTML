@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Smart Mobility Router</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        html, body { width: 100%; height: 100vh; overflow: hidden; background-color: #f4f6f8; color: #333; }
+
+        header {
+            background: #2c3e50; color: white; padding: 10px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            height: 55px; position: relative; z-index: 1001;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .icon-btn {
+            background: #34495e; color: white; border: none; width: 36px; height: 36px;
+            border-radius: 50%; cursor: pointer; font-size: 16px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        #main-container { position: absolute; top: 55px; bottom: 0; left: 0; right: 0; width: 100%; }
+        #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+
+        .floating-graph-btn {
+            position: fixed; bottom: 85px; right: 20px; z-index: 1000;
+            background: #2980b9; color: white; border: none; border-radius: 10px;
+            padding: 10px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .floating-graph-btn:hover { background: #2471a3; }
+
+        .controls-panel {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255, 255, 255, 0.95); padding: 10px 14px; border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3); width: 92vw; max-width: 680px;
+        }
+
+        .center-group { display: flex; gap: 8px; align-items: center; justify-content: center; }
+        
+        .btn-main { padding: 9px 14px; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; outline: none; }
+        .select-transport { background: #ecf0f1; color: #2c3e50; cursor: pointer; }
+        .select-mode { background: #ecf0f1; color: #2c3e50; cursor: pointer; }
+        .btn-clear { background: #e74c3c; color: white; }
+        .btn-ai { background: #8e44ad; color: white; }
+        .btn-route { background: #27ae60; color: white; }
+
+        .ai-chat-panel {
+            position: fixed; top: 65px; right: 15px; width: 340px; height: 430px;
+            background: white; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.3);
+            z-index: 3000; display: none; flex-direction: column; overflow: hidden;
+        }
+        .chat-header { background: #2c3e50; color: white; padding: 10px 14px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .close-chat { cursor: pointer; font-size: 18px; }
+        .chat-messages { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: #f8f9fa; }
+        .message { padding: 8px 10px; border-radius: 8px; font-size: 12px; max-width: 95%; line-height: 1.4; word-break: break-word; }
+        .ai-msg { background: #e2e8f0; color: #1e293b; align-self: flex-start; }
+        .user-msg { background: #3b82f6; color: white; align-self: flex-end; }
+        .chat-input-area { display: flex; padding: 8px; background: white; border-top: 1px solid #e2e8f0; gap: 6px; }
+        .chat-input-area input { flex: 1; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; outline: none; }
+        .chat-input-area button { padding: 6px 10px; background: #27ae60; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+
+        .ai-toast {
+            position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%);
+            background: #2c3e50; color: white; padding: 10px 18px; border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: none; z-index: 4000; font-size: 12px; text-align: center;
+            max-width: 90vw; line-height: 1.4;
+        }
+
+        .modal {
+            display: none !important; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5); z-index: 5000; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 12px; max-width: 560px; width: 92%;
+            position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.3); max-height: 85vh; overflow-y: auto;
+        }
+        .close-btn { position: absolute; top: 10px; right: 14px; font-size: 24px; cursor: pointer; color: #7f8c8d; }
+        #canvas-container { text-align: center; background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 5px; margin-top: 8px; position: relative; overflow: hidden; cursor: crosshair; }
+        #graphCanvas { background: #ffffff; width: 500px; height: 300px; display: block; margin: 0 auto; }
+
+        @media (max-width: 768px) {
+            .controls-panel { bottom: 10px; padding: 8px; gap: 6px; width: 98vw; }
+            .btn-main { padding: 8px 10px; font-size: 11px; }
+            .ai-chat-panel { width: 92vw; right: 4vw; height: 360px; top: 60px; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>AI Smart Mobility Router</h2>
+        <button class="icon-btn" onclick="openModal('help-modal')" title="Инструкция">❓</button>
+    </header>
+
+    <button class="floating-graph-btn" onclick="openModal('graph-modal')">⚙️ Граф</button>
+
+    <div id="main-container">
+        <div id="map"></div>
+    </div>
+
+    <div class="controls-panel">
+       <select id="transport-mode" class="btn-main select-transport">
+            <option value="driving" selected>🚗 Авто</option>
+            <option value="cycling">🚴 Велосипед</option>
+            <option value="walking">🚶 Пешеход</option>
+        </select>
+
+        <div class="center-group">
+            <button class="btn-main btn-route" onclick="buildRoute()">📍 Маршрут</button>
+            <button class="btn-main btn-ai" onclick="toggleChat()">💬 Запрос к ИИ</button>
+            <button class="btn-main btn-clear" onclick="clearMapRoute()">🗑️ Очистить</button>
+        </div>
+
+        <!-- Режим по умолчанию теперь "По порядку" -->
+        <select id="route-mode" class="btn-main select-mode">
+            <option value="sequence" selected>По порядку</option>
+            <option value="shortest">Оптимизация</option>
+        </select>
+    </div>
+
+    <div id="ai-chat-panel" class="ai-chat-panel">
+        <div class="chat-header">
+            <span>🤖 ИИ-Ассистент</span>
+            <span class="close-chat" onclick="toggleChat()">&times;</span>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="message ai-msg">Привет! Спросите меня о любом месте (например: <i>«Где выпить кофе?»</i> или <i>«Ищу аптеку»</i>).</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Введите запрос..." onkeypress="handleChatKeyPress(event)">
+            <button onclick="sendAiMessage()">Отправить</button>
+        </div>
+    </div>
+
+    <div id="ai-toast" class="ai-toast"></div>
+
+    <div id="graph-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('graph-modal')">&times;</span>
+            <h3>Конструктор и расчет графа</h3>
+            <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px;">
+                <label style="font-size: 12px;">Режим:
+                    <select id="graph-mode" style="padding: 4px;" onchange="onGraphModeChange()">
+                        <option value="node">➕ Вершина</option>
+                        <option value="edge">🔗 Ребро</option>
+                        <option value="set-start">🟢 Старт</option>
+                        <option value="set-end">🔴 Финиш</option>
+                    </select>
+                </label>
+                <div style="font-size: 11px; color: #666;" id="graph-hint">Кликните, чтобы добавить вершину</div>
+                <div>
+                    <button onclick="runGraphPathfinding()" style="padding: 5px 10px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 11px;">🚀 Запуск пути</button>
+                    <button onclick="clearCustomGraph()" style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 11px;">Очистить</button>
+                </div>
+            </div>
+            <div id="canvas-container">
+                <canvas id="graphCanvas" width="500" height="300"></canvas>
+                <div style="position: absolute; bottom: 5px; right: 8px; font-size: 10px; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 4px;" id="zoom-indicator">Масштаб: 100%</div>
+            </div>
+            <div id="graph-result-text" style="margin-top: 8px; font-size: 12px; font-weight: bold; color: #2c3e50; line-height: 1.4;"></div>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('help-modal')">&times;</span>
+            <h3>📖 Инструкция по использованию</h3>
+            <ul style="margin-left: 18px; margin-top: 8px; line-height: 1.6; font-size: 13px;">
+                <li>🟢 <b>Стартовая точка:</b> Зеленый маркер определяет место старта. Вы можете перенести его в любое место, кликнув <b>правой кнопкой мыши</b> по карте.</li>
+                <li>📍 <b>Добавление точек:</b> Кликайте левой кнопкой мыши по карте или используйте <b>💬 Запрос к ИИ</b> для поиска мест (кафе, аптек, заправок).</li>
+                <li>✏️ <b>Название и удаление:</b> Кликните по любому маркеру на карте, чтобы переименовать точку или <b>удалить её по одной</b> с помощью красной кнопки удаления.</li>
+                <li>🔄 <b>Режимы построения:</b> 
+                    <br>• <i>По порядку</i> — строит маршрут строго в порядке добавления точек (по умолчанию).
+                    <br>• <i>Оптимизация</i> — находит математически кратчайший путь (Brute Force, доступно для быстрого расчета до 9 точек включительно).
+                </li>
+                <li>⚙️ <b>Конструктор графов:</b> Позволяет строить собственные абстрактные графы и находить пути с помощью алгоритма поиска в ширину (BFS).</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([53.9006, 27.5590], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+        setTimeout(() => { map.invalidateSize(); }, 200);
+
+        let waypoints = [];
+        let routeLayer = null;
+        let waypointIdCounter = 0;
+
+        const greenIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.4/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        function updateMarkersVisuals() {
+            waypoints.forEach((wp, index) => {
+                if (index === 0) {
+                    wp.marker.setIcon(greenIcon);
+                } else {
+                    wp.marker.setIcon(new L.Icon.Default());
+                }
+                updateMarkerPopup(wp, index);
+            });
+        }
+
+        function updateMarkerPopup(wpObj, index) {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div style="font-size:12px; margin-bottom:4px;"><b>${index === 0 ? '🟢 Старт' : 'Точка #' + index}</b></div>
+                <input type="text" id="wp-name-${wpObj.id}" value="${wpObj.name}" placeholder="Название..." style="padding:4px; font-size:11px; width:130px; border:1px solid #ccc; border-radius:4px; margin-bottom:6px;"><br>
+                <div style="display:flex; gap:4px;">
+                    <button onclick="saveWaypointName(${wpObj.id})" style="padding:3px 6px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-size:10px; font-weight:bold;">💾 Сохранить</button>
+                    <button onclick="removeWaypoint(${wpObj.id})" style="padding:3px 6px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:10px; font-weight:bold;">🗑️ Удалить</button>
+                </div>
+            `;
+            wpObj.marker.bindPopup(container);
+        }
+
+        function saveWaypointName(id) {
+            const wp = waypoints.find(w => w.id === id);
+            const input = document.getElementById(`wp-name-${id}`);
+            if (wp && input) {
+                wp.name = input.value.trim() || `Точка`;
+                const idx = waypoints.indexOf(wp);
+                updateMarkerPopup(wp, idx);
+                wp.marker.openPopup();
+                showAiToast(`✏️ Название сохранено: «${wp.name}»`);
+            }
+        }
+
+        // Функция удаления отдельной точки по ID
+        function removeWaypoint(id) {
+            const index = waypoints.findIndex(w => w.id === id);
+            if (index !== -1) {
+                map.removeLayer(waypoints[index].marker);
+                waypoints.splice(index, 1);
+                
+                if (routeLayer) { 
+                    map.removeLayer(routeLayer); 
+                    routeLayer = null; 
+                }
+
+                updateMarkersVisuals();
+                map.closePopup();
+                showAiToast(`🗑️ Точка удалена. Осталось точек: ${waypoints.length}`);
+            }
+        }
+
+        function addWaypoint(latlng, name = "") {
+            const id = waypointIdCounter++;
+            const index = waypoints.length;
+            const defaultName = name || (index === 0 ? "Старт" : `Точка #${index}`);
+            
+            const isStart = (index === 0);
+            const marker = L.marker(latlng, { icon: isStart ? greenIcon : new L.Icon.Default() }).addTo(map);
+
+            const wpObj = { id: id, latlng: latlng, name: defaultName, marker: marker };
+            waypoints.push(wpObj);
+
+            updateMarkersVisuals();
+            showAiToast(`📍 Добавлена точка: ${defaultName} (${waypoints.length})`);
+        }
+
+        function setStartLocation(lat, lon, popupText = "Старт") {
+            const startLatLng = L.latLng(lat, lon);
+            if (waypoints.length > 0) {
+                waypoints[0].latlng = startLatLng;
+                waypoints[0].marker.setLatLng(startLatLng);
+                updateMarkersVisuals();
+            } else {
+                addWaypoint(startLatLng, popupText);
+            }
+            map.setView(startLatLng, 15);
+            showAiToast(`📍 Стартовая точка установлена!`);
+        }
+
+        function requestUserGeolocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => setStartLocation(pos.coords.latitude, pos.coords.longitude, "Старт (GPS)"),
+                    err => {
+                        const center = map.getCenter();
+                        setStartLocation(center.lat, center.lng, "Старт (Центр)");
+                    },
+                    { timeout: 8000, enableHighAccuracy: true }
+                );
+            } else {
+                const center = map.getCenter();
+                setStartLocation(center.lat, center.lng);
+            }
+        }
+
+        requestUserGeolocation();
+
+        map.on('contextmenu', function(e) {
+            setStartLocation(e.latlng.lat, e.latlng.lng, "Старт (Вручную)");
+            showAiToast("🟢 Стартовая точка перенесена!");
+        });
+
+        map.on('click', function(e) {
+            addWaypoint(e.latlng);
+        });
+
+        function openModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) {
+                modal.style.setProperty('display', 'flex', 'important');
+                if (id === 'graph-modal') setTimeout(() => drawCustomGraph(), 100);
+            }
+        }
+
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.style.setProperty('display', 'none', 'important');
+        }
+
+        function clearMapRoute() {
+            const startLatLng = waypoints.length > 0 ? waypoints[0].latlng : map.getCenter();
+            waypoints.forEach(wp => map.removeLayer(wp.marker));
+            waypoints = [];
+            if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+
+            addWaypoint(startLatLng, "Старт");
+            showAiToast("🗑️ Маршрут очищен. Стартовая позиция сохранена.");
+        }
+
+        async function buildRoute() {
+            if (waypoints.length < 2) {
+                showAiToast('⚠️ Добавьте хотя бы две точки на карту!');
+                return;
+            }
+
+            const routeSelect = document.getElementById('route-mode');
+            const routeMode = routeSelect ? routeSelect.value : 'sequence';
+
+            const transportSelect = document.getElementById('transport-mode');
+            const transportProfile = transportSelect ? transportSelect.value : 'driving';
+
+            let pointsPayload = waypoints.map(wp => ({
+                id: wp.id,
+                lat: wp.latlng.lat,
+                lon: wp.latlng.lng,
+                name: wp.name
+            }));
+
+            try {
+                const res = await fetch('/api/analyze-route', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        points: pointsPayload, 
+                        mode: routeMode, 
+                        optimization_mode: routeMode 
+                    })
+                });
+                
+                const aiData = await res.json();
+
+                if (aiData.status === 'error') {
+                    showAiToast(aiData.message, 8000);
+                    return;
+                }
+
+                if (aiData.optimized_waypoints && aiData.optimized_waypoints.length > 0) {
+                    let reorderedWaypoints = [];
+                    aiData.optimized_waypoints.forEach(opt => {
+                        let found = waypoints.find(wp => wp.id === opt.id);
+                        if (found) reorderedWaypoints.push(found);
+                    });
+
+                    if (reorderedWaypoints.length === waypoints.length) {
+                        waypoints = reorderedWaypoints;
+                        updateMarkersVisuals();
+                    }
+                }
+            } catch(e) {
+                console.warn("Ошибка связи с сервером оптимизации:", e);
+            }
+
+            if (routeLayer) { 
+                map.removeLayer(routeLayer); 
+                routeLayer = null; 
+            }
+
+            let coordsString = waypoints.map(wp => `${wp.latlng.lng},${wp.latlng.lat}`).join(';');
+            
+            // ВЫБОР СЕРВЕРА И ПРОФИЛЯ:
+            // Для пешеходов и велосипедов используем специализированный сервер OpenStreetMap France / OSRM, 
+            // который учитывает пешеходные дорожки, парки и тротуары отдельно от автострад.
+            let osrmUrl = `https://router.project-osrm.org/route/v1/${transportProfile}/${coordsString}?overview=full&geometries=geojson`;
+            
+            if (transportProfile === 'walking') {
+                // Публичный шлюз с честной пешеходной сеткой (тротуары, парковые зоны)
+                osrmUrl = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coordsString}?overview=full&geometries=geojson`;
+            } else if (transportProfile === 'cycling') {
+                // Публичный шлюз для велосипедов (велодорожки, тихие улицы)
+                osrmUrl = `https://routing.openstreetmap.de/routed-bike/route/v1/bike/${coordsString}?overview=full&geometries=geojson`;
+            }
+
+            try {
+                showAiToast('🔄 Строим маршрут...');
+                const response = await fetch(osrmUrl);
+                const data = await response.json();
+
+                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                    const route = data.routes[0];
+                    const distanceMeters = route.distance;
+                    const distanceKm = (distanceMeters / 1000).toFixed(2);
+                    
+                    // Честный расчет времени под скорость передвижения:
+                    // Пешеход: ~4.8 км/ч (1.33 м/с)
+                    // Велосипед: ~15 км/ч (4.16 м/с)
+                    // Авто: берем стандартное время OSRM
+                    let durationSec = route.duration;
+                    if (transportProfile === 'walking') {
+                        durationSec = distanceMeters / 1.33; 
+                    } else if (transportProfile === 'cycling') {
+                        durationSec = distanceMeters / 4.16; 
+                    }
+
+                    const durationMin = Math.max(1, Math.round(durationSec / 60));
+                    const hours = Math.floor(durationMin / 60);
+                    const minutes = durationMin % 60;
+                    let timeStr = hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
+
+                    let routeColor = '#2980b9'; // Синий (Авто)
+                    if (transportProfile === 'cycling') routeColor = '#27ae60'; // Зеленый (Вело)
+                    if (transportProfile === 'walking') routeColor = '#e67e22'; // Оранжевый (Пешеход)
+
+                    routeLayer = L.geoJSON(route.geometry, {
+                        style: { color: routeColor, weight: 6, opacity: 0.85 }
+                    }).addTo(map);
+
+                    map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
+
+                    let modeName = routeMode === 'shortest' ? 'Оптимизированный обход' : 'По порядку';
+                    let transportName = transportProfile === 'driving' ? '🚗 Авто' : (transportProfile === 'cycling' ? '🚴 Велосипед' : '🚶 Пешеход');
+
+                    showAiToast(`✅ Маршрут построен (${transportName})!<br>📌 <b>Режим:</b> ${modeName}<br>📏 <b>Расстояние:</b> ${distanceKm} км<br>⏱️ <b>Время в пути:</b> ~${timeStr}`, 9000);
+                } else {
+                    showAiToast('⚠️ Сервис маршрутизации не смог построить путь для выбранного транспорта.');
+                }
+            } catch(err) {
+                console.error("Routing Error:", err);
+                showAiToast('⚠️ Ошибка запроса к серверу маршрутов.');
+            }
+        }
+
+        // Функция тостов с настраиваемой задержкой (по умолчанию 6 секунд, для маршрутов — 9 секунд)
+        function showAiToast(text, duration = 6000) {
+            const toast = document.getElementById('ai-toast');
+            toast.innerHTML = text;
+            toast.style.display = 'block';
+            if (window.toastTimer) clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => { toast.style.display = 'none'; }, duration);
+        }
+
+        function toggleChat() {
+            const chat = document.getElementById('ai-chat-panel');
+            chat.style.display = chat.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        function handleChatKeyPress(e) { if (e.key === 'Enter') sendAiMessage(); }
+
+        async function sendAiMessage() {
+            const input = document.getElementById('chat-input');
+            const msg = input.value.trim();
+            if (!msg) return;
+            appendChatMsg(msg, 'user-msg');
+            input.value = '';
+
+            let currentLat = map.getCenter().lat;
+            let currentLon = map.getCenter().lng;
+
+            try {
+                const res = await fetch('/api/ai-assistant', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg, current_lat: currentLat, current_lon: currentLon })
+                });
+                const data = await res.json();
+                appendChatMsg(data.reply, 'ai-msg');
+            } catch(e) {
+                appendChatMsg("⚠️ Ошибка связи с ИИ.", 'ai-msg');
+            }
+        }
+
+        async function requestAlternative() {
+            let currentLat = map.getCenter().lat;
+            let currentLon = map.getCenter().lng;
+
+            try {
+                const res = await fetch('/api/ai-assistant', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: "", current_lat: currentLat, current_lon: currentLon, action: "alternative" })
+                });
+                const data = await res.json();
+                appendChatMsg(data.reply, 'ai-msg');
+            } catch(e) {
+                appendChatMsg("⚠️ Ошибка получения альтернативы.", 'ai-msg');
+            }
+        }
+
+        function appendChatMsg(text, className) {
+            const box = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `message ${className}`;
+            div.innerHTML = text;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function previewAiPoint(lat, lon, name) {
+            const ll = L.latLng(lat, lon);
+            map.setView(ll, 18);
+            L.marker(ll).addTo(map).bindPopup(`<b>Предпросмотр:</b> ${name}`).openPopup();
+            showAiToast(`👁️ Фокус на объекте: «${name}»`);
+        }
+
+        function selectAiPoint(lat, lon, name) {
+            const ll = L.latLng(lat, lon);
+            addWaypoint(ll, name);
+            map.setView(ll, 15);
+            showAiToast(`📍 Точка «${name}» добавлена в список (${waypoints.length})! Нажмите «Маршрут» для расчета.`);
+        }
+
+        // --- КОНСТРУКТОР ГРАФОВ ---
+        let nodes = [], edges = [], selNode = null, sNode = null, eNode = null;
+        let graphScale = 1.0;
+        let graphPanX = 0, graphPanY = 0;
+        let isPanning = false, startPanX = 0, startPanY = 0;
+
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas ? canvas.getContext('2d') : null;
+
+        function onGraphModeChange() {
+            selNode = null;
+            const mode = document.getElementById('graph-mode').value;
+            const hint = document.getElementById('graph-hint');
+            if (mode === 'node') hint.innerText = "Кликните на пустом месте для создания вершины";
+            else if (mode === 'edge') hint.innerText = "Выберите первую вершину (она подсветится)";
+            else if (mode === 'set-start') hint.innerText = "Кликните на вершину, чтобы сделать её стартом";
+            else if (mode === 'set-end' && hint) hint.innerText = "Кликните на вершину, чтобы сделать её финишем";
+            drawCustomGraph();
+        }
+
+        if (canvas) {
+            canvas.addEventListener('wheel', function(e) {
+                e.preventDefault();
+                const zoomFactor = 1.1;
+                if (e.deltaY < 0) {
+                    graphScale = Math.min(graphScale * zoomFactor, 3.0);
+                } else {
+                    graphScale = Math.max(graphScale / zoomFactor, 0.4);
+                }
+                document.getElementById('zoom-indicator').innerText = `Масштаб: ${Math.round(graphScale * 100)}%`;
+                drawCustomGraph();
+            });
+
+            canvas.addEventListener('mousedown', function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const x = (mouseX - graphPanX) / graphScale;
+                const y = (mouseY - graphPanY) / graphScale;
+
+                if (e.button === 2 || e.shiftKey) {
+                    isPanning = true;
+                    startPanX = e.clientX - graphPanX;
+                    startPanY = e.clientY - graphPanY;
+                    return;
+                }
+
+                const mode = document.getElementById('graph-mode').value;
+                const clicked = nodes.find(n => Math.hypot(n.x - x, n.y - y) < 15 / graphScale);
+
+                if (mode === 'node' && !clicked) {
+                    nodes.push({ x: Math.round(x), y: Math.round(y), id: nodes.length });
+                } else if (mode === 'edge' && clicked) {
+                    if (!selNode) {
+                        selNode = clicked;
+                    } else if (selNode.id !== clicked.id) {
+                        const exists = edges.some(ed => (ed.from === selNode.id && ed.to === clicked.id) || (ed.from === clicked.id && ed.to === selNode.id));
+                        if (!exists) {
+                            const w = Math.round(Math.hypot(selNode.x - clicked.x, selNode.y - clicked.y));
+                            edges.push({ from: selNode.id, to: clicked.id, weight: w });
+                        }
+                        selNode = null;
+                    } else {
+                        selNode = null;
+                    }
+                } else if (mode === 'set-start' && clicked) {
+                    sNode = clicked.id;
+                } else if (mode === 'set-end' && clicked) {
+                    eNode = clicked.id;
+                }
+                drawCustomGraph();
+            });
+
+            canvas.addEventListener('mousemove', function(e) {
+                if (isPanning) {
+                    graphPanX = e.clientX - startPanX;
+                    graphPanY = e.clientY - startPanY;
+                    drawCustomGraph();
+                }
+            });
+
+            canvas.addEventListener('mouseup', () => { isPanning = false; });
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
+        }
+
+        function drawCustomGraph(pathNodes = []) {
+            if (!ctx) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(graphPanX, graphPanY);
+            ctx.scale(graphScale, graphScale);
+            
+            edges.forEach(e => {
+                const n1 = nodes[e.from], n2 = nodes[e.to];
+                if (!n1 || !n2) return;
+                ctx.beginPath(); ctx.moveTo(n1.x, n1.y); ctx.lineTo(n2.x, n2.y);
+                ctx.strokeStyle = '#34495e'; ctx.lineWidth = 2; ctx.stroke();
+
+                ctx.fillStyle = '#7f8c8d'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+                ctx.fillText(e.weight, (n1.x + n2.x) / 2, (n1.y + n2.y) / 2 - 4);
+            });
+
+            if (pathNodes.length > 1) {
+                for (let i = 0; i < pathNodes.length - 1; i++) {
+                    const n1 = nodes[pathNodes[i]], n2 = nodes[pathNodes[i+1]];
+                    if (n1 && n2) {
+                        ctx.beginPath(); ctx.moveTo(n1.x, n1.y); ctx.lineTo(n2.x, n2.y);
+                        ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 4; ctx.stroke();
+                    }
+                }
+            }
+
+            nodes.forEach(n => {
+                ctx.beginPath(); ctx.arc(n.x, n.y, 14, 0, Math.PI * 2);
+                
+                if (selNode && selNode.id === n.id) {
+                    ctx.fillStyle = '#e67e22';
+                } else if (n.id === sNode) {
+                    ctx.fillStyle = '#2ecc71';
+                } else if (n.id === eNode) {
+                    ctx.fillStyle = '#e74c3c';
+                } else {
+                    ctx.fillStyle = '#3498db';
+                }
+                
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+
+                    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+                ctx.fillText(n.id, n.x, n.y + 4);
+            });
+
+            ctx.restore();
+        }
+
+        function runGraphPathfinding() {
+            if (sNode === null || eNode === null) {
+                document.getElementById('graph-result-text').innerText = "⚠️ Установите Старт (🟢) и Финиш (🔴)!";
+                return;
+            }
+
+            const startTime = performance.now();
+
+            let queue = [[sNode]];
+            let visited = new Set([sNode]);
+            let foundPath = null;
+
+            while (queue.length > 0) {
+                let path = queue.shift();
+                let curr = path[path.length - 1];
+                if (curr === eNode) { foundPath = path; break; }
+
+                let neighbors = edges.filter(e => e.from === curr || e.to === curr).map(e => e.from === curr ? e.to : e.from);
+                for (let next of neighbors) {
+                    if (!visited.has(next)) {
+                        visited.add(next);
+                        queue.push([...path, next]);
+                    }
+                }
+            }
+
+            const endTime = performance.now();
+            const calculationTimeMs = (endTime - startTime).toFixed(2);
+
+            if (foundPath) {
+                let totalWeight = 0;
+                for (let i = 0; i < foundPath.length - 1; i++) {
+                    let u = foundPath[i], v = foundPath[i+1];
+                    let edge = edges.find(ed => (ed.from === u && ed.to === v) || (ed.from === v && ed.to === u));
+                    if (edge) totalWeight += edge.weight;
+                }
+
+                drawCustomGraph(foundPath);
+                document.getElementById('graph-result-text').innerHTML = 
+                    `✅ <b>Путь найден!</b><br>` +
+                    `🧠 <b>Алгоритм:</b> BFS (Поиск в ширину)<br>` +
+                    `📌 <b>Маршрут:</b> ${foundPath.join(' ➔ ')}<br>` +
+                    `📏 <b>Длина пути:</b> ${totalWeight} уел. ед. | ⏱️ <b>Время расчета:</b> ${calculationTimeMs} мс`;
+            } else {
+                document.getElementById('graph-result-text').innerText = "❌ Путь между стартом и финишем не найден!";
+            }
+        }
+
+        function clearCustomGraph() {
+            nodes = []; edges = []; sNode = null; eNode = null; selNode = null;
+            graphScale = 1.0; graphPanX = 0; graphPanY = 0;
+            document.getElementById('zoom-indicator').innerText = "Масштаб: 100%";
+            document.getElementById('graph-result-text').innerText = "";
+            drawCustomGraph();
+        }
+    </script>
+</body>
+</html>
