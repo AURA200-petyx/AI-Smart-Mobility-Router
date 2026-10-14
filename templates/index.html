@@ -86,10 +86,18 @@
         #canvas-container { text-align: center; background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 5px; margin-top: 8px; position: relative; overflow: hidden; cursor: crosshair; }
         #graphCanvas { background: #ffffff; width: 500px; height: 300px; display: block; margin: 0 auto; }
 
+        /* МОБИЛЬНАЯ АДАПТАЦИЯ (Только для телефонов) */
         @media (max-width: 768px) {
-            .controls-panel { bottom: 10px; padding: 8px; gap: 6px; width: 98vw; }
-            .btn-main { padding: 8px 10px; font-size: 11px; }
-            .ai-chat-panel { width: 92vw; right: 4vw; height: 360px; top: 60px; }
+            .floating-graph-btn { display: none !important; } /* Убираем кнопку граф на телефонах */
+            .controls-panel { 
+                bottom: 12px; padding: 10px; gap: 6px; width: 96vw; 
+                flex-direction: column; background: rgba(255, 255, 255, 0.96);
+                backdrop-filter: blur(10px); border-radius: 16px;
+            }
+            .center-group { width: 100%; justify-content: space-between; }
+            .select-transport, .select-mode { width: 100%; text-align: center; }
+            .btn-main { padding: 10px; font-size: 12px; flex: 1; }
+            .ai-chat-panel { width: 94vw; right: 3vw; height: 380px; top: 60px; border-radius: 16px; }
         }
     </style>
 </head>
@@ -119,7 +127,6 @@
             <button class="btn-main btn-clear" onclick="clearMapRoute()">🗑️ Очистить</button>
         </div>
 
-        <!-- Режим по умолчанию теперь "По порядку" -->
         <select id="route-mode" class="btn-main select-mode">
             <option value="sequence" selected>По порядку</option>
             <option value="shortest">Оптимизация</option>
@@ -174,14 +181,10 @@
             <span class="close-btn" onclick="closeModal('help-modal')">&times;</span>
             <h3>📖 Инструкция по использованию</h3>
             <ul style="margin-left: 18px; margin-top: 8px; line-height: 1.6; font-size: 13px;">
-                <li>🟢 <b>Стартовая точка:</b> Зеленый маркер определяет место старта. Вы можете перенести его в любое место, кликнув <b>правой кнопкой мыши</b> по карте.</li>
-                <li>📍 <b>Добавление точек:</b> Кликайте левой кнопкой мыши по карте или используйте <b>💬 Запрос к ИИ</b> для поиска мест (кафе, аптек, заправок).</li>
-                <li>✏️ <b>Название и удаление:</b> Кликните по любому маркеру на карте, чтобы переименовать точку или <b>удалить её по одной</b> с помощью красной кнопки удаления.</li>
-                <li>🔄 <b>Режимы построения:</b> 
-                    <br>• <i>По порядку</i> — строит маршрут строго в порядке добавления точек (по умолчанию).
-                    <br>• <i>Оптимизация</i> — находит математически кратчайший путь (Brute Force, доступно для быстрого расчета до 9 точек включительно).
-                </li>
-                <li>⚙️ <b>Конструктор графов:</b> Позволяет строить собственные абстрактные графы и находить пути с помощью алгоритма поиска в ширину (BFS).</li>
+                <li>🟢 <b>Стартовая точка:</b> Зеленый маркер определяет место старта. Вы можете перенести его в любое место, зажав экран (долгое нажатие / правый клик) по карте.</li>
+                <li>📍 <b>Добавление точек:</b> Кликайте по карте или используйте <b>💬 Запрос к ИИ</b> для поиска мест.</li>
+                <li>✏️ <b>Название и удаление:</b> Кликните по любому маркеру на карте, чтобы переименовать точку или удалить её.</li>
+                <li>🔄 <b>Режимы построения:</b> Выбирайте между строго заданным порядком или автоматической оптимизацией кратчайшего пути.</li>
             </ul>
         </div>
     </div>
@@ -243,7 +246,6 @@
             }
         }
 
-        // Функция удаления отдельной точки по ID
         function removeWaypoint(id) {
             const index = waypoints.findIndex(w => w.id === id);
             if (index !== -1) {
@@ -289,6 +291,7 @@
             showAiToast(`📍 Стартовая точка установлена!`);
         }
 
+        // Высокоточная геолокация для надежного определения на смартфонах
         function requestUserGeolocation() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
@@ -297,7 +300,7 @@
                         const center = map.getCenter();
                         setStartLocation(center.lat, center.lng, "Старт (Центр)");
                     },
-                    { timeout: 8000, enableHighAccuracy: true }
+                    { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
                 );
             } else {
                 const center = map.getCenter();
@@ -399,16 +402,11 @@
 
             let coordsString = waypoints.map(wp => `${wp.latlng.lng},${wp.latlng.lat}`).join(';');
             
-            // ВЫБОР СЕРВЕРА И ПРОФИЛЯ:
-            // Для пешеходов и велосипедов используем специализированный сервер OpenStreetMap France / OSRM, 
-            // который учитывает пешеходные дорожки, парки и тротуары отдельно от автострад.
             let osrmUrl = `https://router.project-osrm.org/route/v1/${transportProfile}/${coordsString}?overview=full&geometries=geojson`;
             
             if (transportProfile === 'walking') {
-                // Публичный шлюз с честной пешеходной сеткой (тротуары, парковые зоны)
                 osrmUrl = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coordsString}?overview=full&geometries=geojson`;
             } else if (transportProfile === 'cycling') {
-                // Публичный шлюз для велосипедов (велодорожки, тихие улицы)
                 osrmUrl = `https://routing.openstreetmap.de/routed-bike/route/v1/bike/${coordsString}?overview=full&geometries=geojson`;
             }
 
@@ -422,10 +420,6 @@
                     const distanceMeters = route.distance;
                     const distanceKm = (distanceMeters / 1000).toFixed(2);
                     
-                    // Честный расчет времени под скорость передвижения:
-                    // Пешеход: ~4.8 км/ч (1.33 м/с)
-                    // Велосипед: ~15 км/ч (4.16 м/с)
-                    // Авто: берем стандартное время OSRM
                     let durationSec = route.duration;
                     if (transportProfile === 'walking') {
                         durationSec = distanceMeters / 1.33; 
@@ -438,9 +432,9 @@
                     const minutes = durationMin % 60;
                     let timeStr = hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
 
-                    let routeColor = '#2980b9'; // Синий (Авто)
-                    if (transportProfile === 'cycling') routeColor = '#27ae60'; // Зеленый (Вело)
-                    if (transportProfile === 'walking') routeColor = '#e67e22'; // Оранжевый (Пешеход)
+                    let routeColor = '#2980b9';
+                    if (transportProfile === 'cycling') routeColor = '#27ae60';
+                    if (transportProfile === 'walking') routeColor = '#e67e22';
 
                     routeLayer = L.geoJSON(route.geometry, {
                         style: { color: routeColor, weight: 6, opacity: 0.85 }
@@ -461,7 +455,6 @@
             }
         }
 
-        // Функция тостов с настраиваемой задержкой (по умолчанию 6 секунд, для маршрутов — 9 секунд)
         function showAiToast(text, duration = 6000) {
             const toast = document.getElementById('ai-toast');
             toast.innerHTML = text;
@@ -497,23 +490,6 @@
                 appendChatMsg(data.reply, 'ai-msg');
             } catch(e) {
                 appendChatMsg("⚠️ Ошибка связи с ИИ.", 'ai-msg');
-            }
-        }
-
-        async function requestAlternative() {
-            let currentLat = map.getCenter().lat;
-            let currentLon = map.getCenter().lng;
-
-            try {
-                const res = await fetch('/api/ai-assistant', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: "", current_lat: currentLat, current_lon: currentLon, action: "alternative" })
-                });
-                const data = await res.json();
-                appendChatMsg(data.reply, 'ai-msg');
-            } catch(e) {
-                appendChatMsg("⚠️ Ошибка получения альтернативы.", 'ai-msg');
             }
         }
 
@@ -672,7 +648,7 @@
                 ctx.strokeStyle = '#fff';
                 ctx.stroke();
 
-                    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
                 ctx.fillText(n.id, n.x, n.y + 4);
             });
 
