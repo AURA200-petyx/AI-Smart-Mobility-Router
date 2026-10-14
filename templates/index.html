@@ -512,6 +512,28 @@
             }
         }
 
+        // --- ДОБАВЛЕНА ФУНКЦИЯ ДЛЯ КНОПКИ "ДРУГОЙ" (АЛЬТЕРНАТИВА) ---
+        async function requestAlternative() {
+            let currentLat = map.getCenter().lat;
+            let currentLon = map.getCenter().lng;
+
+            try {
+                showAiToast('🔄 Ищем альтернативный вариант...');
+                const res = await fetch('/api/ai-assistant', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: "", current_lat: currentLat, current_lon: currentLon, action: "alternative" })
+                });
+                const data = await res.json();
+                appendChatMsg(data.reply, 'ai-msg');
+                showAiToast('✅ Новый вариант предложен!');
+            } catch(e) {
+                console.error("Alternative Error:", e);
+                appendChatMsg("⚠️ Ошибка получения альтернативы.", 'ai-msg');
+                showAiToast('⚠️ Ошибка запроса.');
+            }
+        }
+
         function appendChatMsg(text, className) {
             const box = document.getElementById('chat-messages');
             const div = document.createElement('div');
