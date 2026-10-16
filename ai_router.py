@@ -26,7 +26,7 @@ class GroqAIRouter:
         return R * c
 
     @classmethod
-    def analyze_and_route(cls, message: str, lat: Optional[float], lon: Optional[float], action: Optional[str] = None) -> Dict[str, Any]:
+    def analyze_and_route(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, grid: Optional[Any] = None, **kwargs) -> Dict[str, Any]:
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
@@ -35,7 +35,6 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Академически чистый системный промпт для модели Groq
             system_prompt = (
                 "You are an AI geospatial routing agent. "
                 "Classify the user request into one of these exact categories: "
@@ -156,7 +155,6 @@ class GroqAIRouter:
             "reply": "⚠️ Не удалось найти подходящие объекты поблизости."
         }
 
-    # Алиас на случай, если где-то вызывается старое имя метода
     @classmethod
-    def process_natural_language_query(cls, message: str, lat: Optional[float], lon: Optional[float], action: Optional[str] = None) -> Dict[str, Any]:
-        return cls.analyze_and_route(message, lat, lon, action)
+    def process_natural_language_query(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, grid: Optional[Any] = None, **kwargs) -> Dict[str, Any]:
+        return cls.analyze_and_route(message, lat, lon, action, grid=grid, **kwargs)
