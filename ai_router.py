@@ -49,7 +49,7 @@ class GroqAIRouter:
             )
 
             try:
-                # Запрос к актуальной нейросети на инфраструктуре Groq
+                # Запрос к модели через Groq API
                 completion = cls.client.chat.completions.create(
                     model="openai/gpt-oss-20b",
                     messages=[
@@ -57,9 +57,16 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.1,
-                    max_tokens=10
+                    max_tokens=20
                 )
-                category = completion.choices[0].message.content.strip().lower()
+                raw_content = completion.choices[0].message.content.strip().lower()
+                
+                # Ищем категорию внутри ответа модели (даже если она написала лишний текст)
+                category = "unknown"
+                for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
+                    if cat in raw_content:
+                        category = cat
+                        break
             except Exception as e:
                 return {
                     "success": False,
