@@ -15,7 +15,18 @@ class GroqAIRouter:
     _last_category_name: str = ""
 
     @classmethod
-    def process_natural_language_query(cls, message: str, lat: Optional[float], lon: Optional[float], action: Optional[str] = None) -> Dict[str, Any]:
+    def calculate_distance(cls, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        R = 6371000
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+        
+        a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+
+    @classmethod
+    def analyze_and_route(cls, message: str, lat: Optional[float], lon: Optional[float], action: Optional[str] = None) -> Dict[str, Any]:
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
@@ -24,13 +35,13 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Строгий и понятный промпт для языковой модели
+            # Академически чистый системный промпт для модели Groq
             system_prompt = (
-                "You are a strict JSON-like semantic classifier for a mapping agent. "
-                "Your task is to read the user request and output ONLY one of the exact words: "
+                "You are an AI geospatial routing agent. "
+                "Classify the user request into one of these exact categories: "
                 "cafe, pharmacy, supermarket, fuel, cinema. "
-                "If no category matches, output: unknown. "
-                "Do not write explanations, punctuation, or formatting."
+                "If it matches none, output: unknown. "
+                "Return ONLY the category name in lowercase, without any formatting or punctuation."
             )
 
             category = "unknown"
@@ -42,12 +53,11 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=15
+                    max_tokens=10
                 )
                 
                 raw_content = completion.choices[0].message.content.strip().lower()
                 
-                # Интеллектуальный поиск ключевой категории среди ответа модели
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
                 for cat in valid_categories:
                     if cat in raw_content:
@@ -145,3 +155,8 @@ class GroqAIRouter:
             "success": False,
             "reply": "⚠️ Не удалось найти подходящие объекты поблизости."
         }
+
+    # Алиас на случай, если где-то вызывается старое имя метода
+    @classmethod
+    def process_natural_language_query(cls, message: str, lat: Optional[float], lon: Optional[float], action: Optional[str] = None) -> Dict[str, Any]:
+        return cls.analyze_and_route(message, lat, lon, action)
