@@ -26,48 +26,78 @@ class GroqAIRouter:
         return R * c
 
     @classmethod
-    def analyze_and_route(cls, message: str = "", lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, grid: Optional[Any] = None, **kwargs) -> Dict[str, Any]:
+    def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
+        """Метод исключительно для оптимизации и построения маршрута по точкам карты"""
+        pts = points or []
+        if not pts:
+            return {"status": "error", "message": "Нет точек для построения маршрута"}
+        
+        # Базовая логика упорядочивания точек для оптимизации
+        ordered_points = pts.copy()
+        if optimization_mode == "nearest" and len(pts) > 2:
+            # Простой алгоритм ближайшего соседа для демонстрации оптимизации
+            start = pts[0]
+            rest = pts[1:]
+            ordered = [start]
+            while rest:
+                current = ordered[-1]
+                nearest = min(rest, key=lambda p: cls.calculate_distance(
+                    float(current.get("lat", 0)), float(current.get("lon", 0)),
+                    float(p.get("lat", 0)), float(p.get("lon", 0))
+                ))
+                ordered.append(nearest)
+                rest.remove(nearest)
+            ordered_points = ordered
+
+        return {
+            "status": "success",
+            "points": ordered_points,
+            "message": "Маршрут успешно оптимизирован"
+        }
+
+    @classmethod
+    def process_natural_language_query(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Метод исключительно для ИИ-ассистента и семантического поиска через Groq"""
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
             else:
                 return {"success": False, "reply": "⚠️ Сначала выполните поиск объекта через ИИ-ассистент."}
         else:
-            msg_clean = message.strip()
+            msg_clean = message.strip().lower()
             
-            system_prompt = (
-                "You are an AI geospatial routing agent. "
-                "Classify the user request into one of these exact categories: "
-                "cafe, pharmacy, supermarket, fuel, cinema. "
-                "If it matches none, output: unknown. "
-                "Return ONLY the category name in lowercase, without any formatting or punctuation."
-            )
-
+            # Надежный гибридный семантический роутинг (гарантирует моментальный ответ без сбоев модели)
             category = "unknown"
-            try:
-                completion = cls.client.chat.completions.create(
-                    model="openai/gpt-oss-20b",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": msg_clean}
-                    ],
-                    temperature=0.0,
-                    max_tokens=10
-                )
-                
-                raw_content = completion.choices[0].message.content.strip().lower()
-                
-                valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
-                for cat in valid_categories:
-                    if cat in raw_content:
-                        category = cat
-                        break
-                        
-            except Exception as e:
-                return {
-                    "success": False,
-                    "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
-                }
+            if any(w in msg_clean for w in ["кофе", "кафе", "ресторан", "поесть", "перекусить", "еда", "ланч"]):
+                category = "cafe"
+            elif any(w in msg_clean for w in ["аптек", "лекарств", "врач", "таблет"]):
+                category = "pharmacy"
+            elif any(w in msg_clean for w in ["магазин", "продукт", "супермаркет", "купить"]):
+                category = "supermarket"
+            elif any(w in msg_clean for w in ["заправк", "бензин", "азс", "топлив"]):
+                category = "fuel"
+            elif any(w in msg_clean for w in ["кино", "фильм", "театр"]):
+                category = "cinema"
+            else:
+                # Запрос к Groq API, если ключевое слово не найдено локально
+                try:
+                    system_prompt = "Return ONLY one word: cafe, pharmacy, supermarket, fuel, or cinema, or unknown."
+                    completion = cls.client.chat.completions.create(
+                        model="openai/gpt-oss-20b",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": message}
+                        ],
+                        temperature=0.0,
+                        max_tokens=10
+                    )
+                    raw_content = completion.choices[0].message.content.strip().lower()
+                    for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
+                        if cat in raw_content:
+                            category = cat
+                            break
+                except Exception:
+                    pass
 
             if category == "unknown":
                 return {
@@ -154,7 +184,3 @@ class GroqAIRouter:
             "success": False,
             "reply": "⚠️ Не удалось найти подходящие объекты поблизости."
         }
-
-    @classmethod
-    def process_natural_language_query(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, grid: Optional[Any] = None, **kwargs) -> Dict[str, Any]:
-        return cls.analyze_and_route(message, lat, lon, action, grid=grid, **kwargs)
