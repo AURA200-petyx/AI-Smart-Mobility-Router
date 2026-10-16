@@ -27,14 +27,12 @@ class GroqAIRouter:
 
     @classmethod
     def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
-        """Алгоритмическая оптимизация порядка точек ( Nearest Neighbor )"""
         pts = points or []
         if not pts:
             return {"status": "error", "message": "Нет точек для построения маршрута", "points": []}
         
         ordered_points = pts.copy()
         
-        # Гарантированный расчет ближайшего соседа, если режим оптимизации активен
         if optimization_mode in ["nearest", "tsp", "optimized", "true", "1"] and len(pts) > 2:
             start = pts[0]
             unvisited = pts[1:]
@@ -70,11 +68,11 @@ class GroqAIRouter:
             msg_clean = message.strip()
             
             system_prompt = (
-                "You are an AI semantic routing agent. "
-                "Classify the user input into EXACTLY one of these words: "
+                "You are the core semantic intent classifier for an autonomous geospatial navigation system. "
+                "Map the user's natural language query into EXACTLY one of these categories: "
                 "cafe, pharmacy, supermarket, fuel, cinema. "
-                "If it does not match, output: unknown. "
-                "Return ONLY the word, no punctuation, no quotes."
+                "If the query does not clearly match any of these categories, output 'unknown'. "
+                "Return ONLY the category name in lowercase, with zero punctuation, quotes, or additional text."
             )
 
             category = "unknown"
@@ -90,7 +88,6 @@ class GroqAIRouter:
                 )
                 
                 raw_content = completion.choices[0].message.content.strip().lower()
-                print(f"[DEBUG GROQ RAW]: {raw_content}") # Будет видно в логах Render
                 
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
                 for cat in valid_categories:
@@ -98,11 +95,17 @@ class GroqAIRouter:
                         category = cat
                         break
             except Exception as e:
-                print(f"[DEBUG GROQ ERROR]: {str(e)}")
-                category = "cafe" # Защита от сбоя API
+                return {
+                    "success": False,
+                    "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
+                }
 
+            # СТРОГОЕ ПРАВИЛО: если ИИ не понял — возвращаем ошибку, никакого фоллбека на кафе!
             if category == "unknown":
-                category = "cafe" # Никогда не падаем на unknown во время презентации
+                return {
+                    "success": False,
+                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
+                }
 
             osm_queries = {
                 "cafe": {"tag": "cafe", "name": "Кафе / Ресторан", "desc": "Заведение общественного питания."},
@@ -112,10 +115,9 @@ class GroqAIRouter:
                 "cinema": {"tag": "cinema", "name": "Кинотеатр", "desc": "Кинотеатр."}
             }
             
-            target_info = osm_queries.get(category, osm_queries["cafe"])
+            target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
-            # Если координаты пришли нулевые или некорректные, ставим центр Минска
             if not lat or not lon or abs(lat) < 1.0 or abs(lon) < 1.0:
                 lat, lon = 53.9006, 27.5590
 
@@ -124,12 +126,10 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=6.0) as client:
-                    # 1. Поиск вблизи текущих координат
                     url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=10&lat={lat}&lon={lon}"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
                     
-                    # 2. Если в лесу/парке ничего не нашлось, ищем по всему Минску гарантированно
                     if not results:
                         url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=10"
                         resp = client.get(url_global, headers=headers)
@@ -153,8 +153,8 @@ class GroqAIRouter:
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
-            except Exception as e:
-                print(f"[DEBUG NOMINATIM ERROR]: {str(e)}")
+            except Exception:
+                pass
 
         if cls._last_results:
             item = cls._last_results[cls._last_index]
@@ -163,8 +163,11 @@ class GroqAIRouter:
             p_lon = float(place["lon"])
             dist = int(item["dist"])
             
-            full_name = place.get("display_name", cls._last_category_name)
-            short_name = full_name.split(",")[0]
+            raw_name = place.get("display_name", "").split(",")[0]
+            if raw_name.lower() in ["cafe", "pharmacy", "supermarket", "fuel", "cinema", "amenity"]:
+                short_name = cls._last_category_name
+            else:
+                short_name = raw_name or cls._last_category_name
             
             reply_text = (
                 f"🤖 <b>Groq AI Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
