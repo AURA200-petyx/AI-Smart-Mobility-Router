@@ -26,7 +26,7 @@ class GroqAIRouter:
         return R * c
 
     @classmethod
-    def analyze_and_route(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, grid: Optional[Any] = None, **kwargs) -> Dict[str, Any]:
+    def analyze_and_route(cls, message: str = "", lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, grid: Optional[Any] = None, **kwargs) -> Dict[str, Any]:
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)

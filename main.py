@@ -14,7 +14,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_dir = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=templates_dir)
 
-# Гибкая модель, которая не упадет при любых входящих данных от клиента
 class RouteRequest(BaseModel):
     grid: Optional[List[Any]] = []
     points: List[Dict[str, Any]]
@@ -39,7 +38,9 @@ async def read_root(request: Request):
 @app.post("/api/analyze-route")
 async def analyze_route(data: RouteRequest):
     try:
+        # Безопасный вызов с передачей пустой строки для message по умолчанию
         result = GroqAIRouter.analyze_and_route(
+            message="",
             grid=data.grid, 
             points=data.points, 
             optimization_mode=data.optimization_mode,
