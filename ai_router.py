@@ -33,49 +33,40 @@ class GroqAIRouter:
             else:
                 return {"success": False, "reply": "⚠️ Сначала выполните поиск объекта через ИИ-ассистент."}
         else:
-            msg_clean = message.strip()
+            msg_clean = message.strip().lower()
             
-            # Строгий системный промпт с классификацией смыслов (семантический роутинг)
-            system_prompt = (
-                "You are an AI geospatial routing classifier. Your ONLY job is to map user queries to one of these exact categories: "
-                "'cafe', 'pharmacy', 'supermarket', 'fuel', 'cinema'. "
-                "Rules:\n"
-                "- If the user asks for food, coffee, snacks, restaurants, or a place to work with a laptop -> return 'cafe'\n"
-                "- If the user asks for medicine, drugs, pharmacy, or a doctor -> return 'pharmacy'\n"
-                "- If the user asks for groceries, supermarkets, stores -> return 'supermarket'\n"
-                "- If the user asks for gas, fuel, gas station -> return 'fuel'\n"
-                "- If the user asks for movies, cinema -> return 'cinema'\n"
-                "- If the query does not match any category, return 'unknown'.\n"
-                "Output ONLY the category name in lowercase, without quotes, punctuation, or conversational filler."
-            )
-
+            # Семантический роутинг на основе ключевых слов (надежный fallback-метод)
             category = "unknown"
-            try:
-                # Обращаемся к Groq API с минимальной температурой для максимальной точности
-                completion = cls.client.chat.completions.create(
-                    model="openai/gpt-oss-20b",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": msg_clean}
-                    ],
-                    temperature=0.0,
-                    max_tokens=10
-                )
-                
-                raw_content = completion.choices[0].message.content.strip().lower()
-                
-                # Очищаем ответ модели от возможных артефактов форматирования
-                cleaned_word = "".join([c for c in raw_content if c.isalpha()])
-                
-                valid_categories = {"cafe", "pharmacy", "supermarket", "fuel", "cinema"}
-                if cleaned_word in valid_categories:
-                    category = cleaned_word
-                    
-            except Exception as e:
-                return {
-                    "success": False,
-                    "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
-                }
+            if any(kw in msg_clean for kw in ["кофе", "кафе", "ресторан", "поесть", "перекусить", "еда", "ланч", "обед"]):
+                category = "cafe"
+            elif any(kw in msg_clean for kw in ["аптек", "лекарств", "врач", "таблет", "аптеч"]):
+                category = "pharmacy"
+            elif any(kw in msg_clean for kw in ["магазин", "продукт", "супермаркет", "купить еду", "гипермаркет"]):
+                category = "supermarket"
+            elif any(kw in msg_clean for kw in ["заправк", "бензин", "азс", "топлив", "заправить"]):
+                category = "fuel"
+            elif any(kw in msg_clean for kw in ["кино", "фильм", "театр", "сеанс"]):
+                category = "cinema"
+            else:
+                # Попытка запроса к модели, если ключевые слова не сработали
+                system_prompt = "Return only one word: cafe, pharmacy, supermarket, fuel, or cinema."
+                try:
+                    completion = cls.client.chat.completions.create(
+                        model="openai/gpt-oss-20b",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": message}
+                        ],
+                        temperature=0.0,
+                        max_tokens=10
+                    )
+                    raw_content = completion.choices[0].message.content.strip().lower()
+                    for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
+                        if cat in raw_content:
+                            category = cat
+                            break
+                except Exception:
+                    pass
 
             if category == "unknown":
                 return {
@@ -141,7 +132,7 @@ class GroqAIRouter:
             short_name = full_name.split(",")[0]
             
             reply_text = (
-                f"🤖 <b>Groq AI Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
+                f"🤖 <b>AI Routing Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
                 f"📍 <b>Найдено:</b> {short_name}<br>"
                 f"📏 <b>Прямое расстояние:</b> ~{dist} метров<br>"
                 f"📝 <b>Описание:</b> {item['desc']}<br><br>"
