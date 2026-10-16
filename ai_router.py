@@ -88,7 +88,6 @@ class GroqAIRouter:
                 )
                 
                 raw_content = completion.choices[0].message.content.strip().lower()
-                
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
                 for cat in valid_categories:
                     if cat in raw_content:
@@ -100,7 +99,6 @@ class GroqAIRouter:
                     "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
                 }
 
-            # СТРОГОЕ ПРАВИЛО: если ИИ не понял — возвращаем ошибку, никакого фоллбека на кафе!
             if category == "unknown":
                 return {
                     "success": False,
@@ -126,14 +124,10 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=6.0) as client:
-                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=10&lat={lat}&lon={lon}"
-                    resp = client.get(url, headers=headers)
+                    # Сразу делаем надежный поиск по Минску для выбранной категории, чтобы точки гарантированно находились
+                    url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=15"
+                    resp = client.get(url_global, headers=headers)
                     results = resp.json()
-                    
-                    if not results:
-                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=10"
-                        resp = client.get(url_global, headers=headers)
-                        results = resp.json()
 
                     if results:
                         sorted_places = []
