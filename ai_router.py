@@ -44,7 +44,7 @@ class GroqAIRouter:
                 "3. supermarket (если ищет продукты, магазины, супермаркет) "
                 "4. fuel (если ищет заправку, бензин, АЗС) "
                 "5. cinema (если ищет кино, фильмы) "
-                "В ответ верни ТОЛЬКО название категории латиницей (cafe, pharmacy, supermarket, fuel или cinema). "
+                "В ответ верни ТОЛЬКО одно слово — название категории латиницей (cafe, pharmacy, supermarket, fuel или cinema). "
                 "Если ни одна категория не подходит, верни 'unknown'."
             )
 
@@ -61,12 +61,13 @@ class GroqAIRouter:
                 )
                 raw_content = completion.choices[0].message.content.strip().lower()
                 
-                # Ищем категорию внутри ответа модели (даже если она написала лишний текст)
+                # Гибкий поиск категории в ответе модели
                 category = "unknown"
                 for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
                     if cat in raw_content:
                         category = cat
                         break
+                        
             except Exception as e:
                 return {
                     "success": False,
