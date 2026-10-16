@@ -67,7 +67,6 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Четкий системный промпт для работающей модели
             system_prompt = (
                 "You are an AI intent classifier for an urban navigation system. "
                 "Classify the user input into EXACTLY one of these categories: "
@@ -88,8 +87,8 @@ class GroqAIRouter:
                     max_tokens=10
                 )
                 
-                # СТРОГО ЗДЕСЬ, ПОСЛЕ СОЗДАНИЯ completion:
-                print(f"[DEBUG GROQ RAW RESPONSE]: {completion.choices[0].message.content}")
+                # Временный вывод полного объекта ответа для диагностики в Render Logs
+                print(f"[DEBUG FULL COMPLETION]: {completion}")
 
                 raw_content = completion.choices[0].message.content.strip().lower()
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
@@ -103,8 +102,6 @@ class GroqAIRouter:
                     "reply": f"⚠️ Ошибка вызова Groq API: {str(e)}"
                 }
 
-            # СТРОГО И ЧЕСТНО: никаких скрытых if/else проверок слов в Python. 
-            # Если модель вернула unknown — выдаем честный отказ.
             if category == "unknown":
                 return {
                     "success": False,
