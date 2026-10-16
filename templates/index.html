@@ -554,7 +554,16 @@
             const ll = L.latLng(lat, lon);
             addWaypoint(ll, name);
             map.setView(ll, 15);
-            showAiToast(`📍 Точка «${name}» добавлена в список (${waypoints.length})! Нажмите «Маршрут» для расчета.`);
+            
+            // Закрываем чат автоматически ТОЛЬКО на мобильных устройствах (ширина экрана до 768px)
+            if (window.innerWidth <= 768) {
+                const chat = document.getElementById('ai-chat-panel');
+                if (chat && chat.style.display === 'flex') {
+                    toggleChat();
+                }
+            }
+
+            showAiToast(`📍 Точка «${name}» добавлена в список (${waypoints.length})!`);
         }
 
         // --- КОНСТРУКТОР ГРАФОВ ---
