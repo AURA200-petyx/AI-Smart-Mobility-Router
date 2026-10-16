@@ -49,9 +49,9 @@ class GroqAIRouter:
             )
 
             try:
-                # Запрос к нейросети Llama 3.1 на ультрабыстрой инфраструктуре Groq
+                # Запрос к актуальной нейросети на инфраструктуре Groq
                 completion = cls.client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.3-70b-versatile",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": msg_clean}
