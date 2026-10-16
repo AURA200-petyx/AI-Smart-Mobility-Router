@@ -79,7 +79,7 @@ class GroqAIRouter:
             category = "unknown"
             try:
                 completion = cls.client.chat.completions.create(
-                    model="openai/gpt-oss-20b",  # Возвращаем рабочую модель, которая поддерживается твоим ключом
+                    model="openai/gpt-oss-20b",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": msg_clean}
@@ -88,6 +88,9 @@ class GroqAIRouter:
                     max_tokens=10
                 )
                 
+                # СТРОГО ЗДЕСЬ, ПОСЛЕ СОЗДАНИЯ completion:
+                print(f"[DEBUG GROQ RAW RESPONSE]: {completion.choices[0].message.content}")
+
                 raw_content = completion.choices[0].message.content.strip().lower()
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
                 for cat in valid_categories:
