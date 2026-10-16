@@ -35,46 +35,49 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Системный промпт для языковой модели Groq
+            # Строгий системный промпт с классификацией смыслов (семантический роутинг)
             system_prompt = (
-                "Ты — интеллектуальный геоассистент навигационной системы. "
-                "Проанализируй запрос пользователя и выбери ОДНУ подходящую категорию из списка: "
-                "1. cafe (если ищет поесть, выпить кофе, рестораны, перекус, ноутбук/поработать) "
-                "2. pharmacy (если ищет лекарства, аптеку, врача) "
-                "3. supermarket (если ищет продукты, магазины, супермаркет) "
-                "4. fuel (если ищет заправку, бензин, АЗС) "
-                "5. cinema (если ищет кино, фильмы) "
-                "В ответ верни ТОЛЬКО одно слово — название категории латиницей (cafe, pharmacy, supermarket, fuel или cinema). "
-                "Если ни одна категория не подходит, верни 'unknown'."
+                "You are an AI geospatial routing classifier. Your ONLY job is to map user queries to one of these exact categories: "
+                "'cafe', 'pharmacy', 'supermarket', 'fuel', 'cinema'. "
+                "Rules:\n"
+                "- If the user asks for food, coffee, snacks, restaurants, or a place to work with a laptop -> return 'cafe'\n"
+                "- If the user asks for medicine, drugs, pharmacy, or a doctor -> return 'pharmacy'\n"
+                "- If the user asks for groceries, supermarkets, stores -> return 'supermarket'\n"
+                "- If the user asks for gas, fuel, gas station -> return 'fuel'\n"
+                "- If the user asks for movies, cinema -> return 'cinema'\n"
+                "- If the query does not match any category, return 'unknown'.\n"
+                "Output ONLY the category name in lowercase, without quotes, punctuation, or conversational filler."
             )
 
+            category = "unknown"
             try:
-                # Запрос к модели через Groq API
+                # Обращаемся к Groq API с минимальной температурой для максимальной точности
                 completion = cls.client.chat.completions.create(
                     model="openai/gpt-oss-20b",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": msg_clean}
                     ],
-                    temperature=0.1,
-                    max_tokens=20
+                    temperature=0.0,
+                    max_tokens=10
                 )
+                
                 raw_content = completion.choices[0].message.content.strip().lower()
                 
-                # Гибкий поиск категории в ответе модели
-                category = "unknown"
-                for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
-                    if cat in raw_content:
-                        category = cat
-                        break
-                        
+                # Очищаем ответ модели от возможных артефактов форматирования
+                cleaned_word = "".join([c for c in raw_content if c.isalpha()])
+                
+                valid_categories = {"cafe", "pharmacy", "supermarket", "fuel", "cinema"}
+                if cleaned_word in valid_categories:
+                    category = cleaned_word
+                    
             except Exception as e:
                 return {
                     "success": False,
                     "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
                 }
 
-            if category == "unknown" or category not in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
+            if category == "unknown":
                 return {
                     "success": False,
                     "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
