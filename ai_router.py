@@ -24,17 +24,13 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Академически чистый промпт с примерами для модели (Few-shot prompting)
+            # Строгий и понятный промпт для языковой модели
             system_prompt = (
-                "You are an AI router for a map navigation system. "
-                "Classify the user request into one of these exact categories: cafe, pharmacy, supermarket, fuel, cinema, unknown.\n\n"
-                "Examples:\n"
-                "User: кофе -> cafe\n"
-                "User: где поесть -> cafe\n"
-                "User: аптека -> pharmacy\n"
-                "User: купить продукты -> supermarket\n"
-                "User: заправка -> fuel\n\n"
-                "Return ONLY the category name in lowercase, nothing else."
+                "You are a strict JSON-like semantic classifier for a mapping agent. "
+                "Your task is to read the user request and output ONLY one of the exact words: "
+                "cafe, pharmacy, supermarket, fuel, cinema. "
+                "If no category matches, output: unknown. "
+                "Do not write explanations, punctuation, or formatting."
             )
 
             category = "unknown"
@@ -46,13 +42,14 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=10
+                    max_tokens=15
                 )
                 
                 raw_content = completion.choices[0].message.content.strip().lower()
                 
-                # Извлекаем чистое название категории из ответа модели
-                for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
+                # Интеллектуальный поиск ключевой категории среди ответа модели
+                valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
+                for cat in valid_categories:
                     if cat in raw_content:
                         category = cat
                         break
