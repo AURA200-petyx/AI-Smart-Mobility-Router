@@ -15,17 +15,6 @@ class GroqAIRouter:
     _last_category_name: str = ""
 
     @classmethod
-    def calculate_distance(cls, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        R = 6371000
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        dphi = math.radians(lat2 - lat1)
-        dlambda = math.radians(lon2 - lon1)
-        
-        a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
-
-    @classmethod
     def process_natural_language_query(cls, message: str, lat: Optional[float], lon: Optional[float], action: Optional[str] = None) -> Dict[str, Any]:
         if action == "alternative":
             if cls._last_results:
@@ -33,40 +22,46 @@ class GroqAIRouter:
             else:
                 return {"success": False, "reply": "⚠️ Сначала выполните поиск объекта через ИИ-ассистент."}
         else:
-            msg_clean = message.strip().lower()
+            msg_clean = message.strip()
             
-            # Семантический роутинг на основе ключевых слов (надежный fallback-метод)
+            # Академически чистый промпт с примерами для модели (Few-shot prompting)
+            system_prompt = (
+                "You are an AI router for a map navigation system. "
+                "Classify the user request into one of these exact categories: cafe, pharmacy, supermarket, fuel, cinema, unknown.\n\n"
+                "Examples:\n"
+                "User: кофе -> cafe\n"
+                "User: где поесть -> cafe\n"
+                "User: аптека -> pharmacy\n"
+                "User: купить продукты -> supermarket\n"
+                "User: заправка -> fuel\n\n"
+                "Return ONLY the category name in lowercase, nothing else."
+            )
+
             category = "unknown"
-            if any(kw in msg_clean for kw in ["кофе", "кафе", "ресторан", "поесть", "перекусить", "еда", "ланч", "обед"]):
-                category = "cafe"
-            elif any(kw in msg_clean for kw in ["аптек", "лекарств", "врач", "таблет", "аптеч"]):
-                category = "pharmacy"
-            elif any(kw in msg_clean for kw in ["магазин", "продукт", "супермаркет", "купить еду", "гипермаркет"]):
-                category = "supermarket"
-            elif any(kw in msg_clean for kw in ["заправк", "бензин", "азс", "топлив", "заправить"]):
-                category = "fuel"
-            elif any(kw in msg_clean for kw in ["кино", "фильм", "театр", "сеанс"]):
-                category = "cinema"
-            else:
-                # Попытка запроса к модели, если ключевые слова не сработали
-                system_prompt = "Return only one word: cafe, pharmacy, supermarket, fuel, or cinema."
-                try:
-                    completion = cls.client.chat.completions.create(
-                        model="openai/gpt-oss-20b",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": message}
-                        ],
-                        temperature=0.0,
-                        max_tokens=10
-                    )
-                    raw_content = completion.choices[0].message.content.strip().lower()
-                    for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
-                        if cat in raw_content:
-                            category = cat
-                            break
-                except Exception:
-                    pass
+            try:
+                completion = cls.client.chat.completions.create(
+                    model="openai/gpt-oss-20b",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": msg_clean}
+                    ],
+                    temperature=0.0,
+                    max_tokens=10
+                )
+                
+                raw_content = completion.choices[0].message.content.strip().lower()
+                
+                # Извлекаем чистое название категории из ответа модели
+                for cat in ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]:
+                    if cat in raw_content:
+                        category = cat
+                        break
+                        
+            except Exception as e:
+                return {
+                    "success": False,
+                    "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
+                }
 
             if category == "unknown":
                 return {
@@ -132,7 +127,7 @@ class GroqAIRouter:
             short_name = full_name.split(",")[0]
             
             reply_text = (
-                f"🤖 <b>AI Routing Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
+                f"🤖 <b>Groq AI Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
                 f"📍 <b>Найдено:</b> {short_name}<br>"
                 f"📏 <b>Прямое расстояние:</b> ~{dist} метров<br>"
                 f"📝 <b>Описание:</b> {item['desc']}<br><br>"
