@@ -84,13 +84,19 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=10
+                    max_tokens=150  # Увеличили лимит с 10 до 150 токенов, чтобы модели хватило на reasoning и content
                 )
                 
-                # Временный вывод полного объекта ответа для диагностики в Render Logs
                 print(f"[DEBUG FULL COMPLETION]: {completion}")
 
-                raw_content = completion.choices[0].message.content.strip().lower()
+                # Безопасно вытаскиваем текст: проверяем и content, и reasoning на случай, если модель пишет туда
+                msg_obj = completion.choices[0].message
+                raw_content = getattr(msg_obj, "content", "") or ""
+                if not raw_content and hasattr(msg_obj, "reasoning"):
+                    raw_content = str(msg_obj.reasoning)
+                
+                raw_content = raw_content.strip().lower()
+                
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
                 for cat in valid_categories:
                     if cat in raw_content:
