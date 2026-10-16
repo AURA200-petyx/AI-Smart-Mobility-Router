@@ -67,25 +67,19 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # ЧИСТЫЙ И МОЩНЫЙ СЕМАНТИЧЕСКИЙ ПРОМПТ БЕЗ ПИТОНОВСКИХ КОСТЫЛЕЙ
+            # Четкий системный промпт для работающей модели
             system_prompt = (
-                "You are an advanced semantic intent classifier for an autonomous geospatial navigation system. "
-                "Analyze the user's query (which can be in Russian or English, formal, slang, or descriptive) "
-                "and map its core intent strictly to one of these urban infrastructure categories:\n"
-                "- cafe (restaurants, coffee shops, places to eat, drink beverages, or work with a laptop)\n"
-                "- pharmacy (medicines, drugs, pills, health items, first aid, pharmacies)\n"
-                "- supermarket (grocery stores, food shopping, supermarkets, markets)\n"
-                "- fuel (gas stations, petrol, car refueling, filling stations, АЗС)\n"
-                "- cinema (theaters, movie screenings, entertainment)\n"
-                "If the query does not semantically map to any of these categories, output 'unknown'. "
-                "CRITICAL: Return ONLY the exact category name in lowercase (cafe, pharmacy, supermarket, fuel, cinema, or unknown). "
-                "Do not include quotes, punctuation, explanation, or extra text."
+                "You are an AI intent classifier for an urban navigation system. "
+                "Classify the user input into EXACTLY one of these categories: "
+                "cafe, pharmacy, supermarket, fuel, cinema. "
+                "If it does not match any, output: unknown. "
+                "Return ONLY the category name in lowercase, no quotes, no extra words."
             )
 
             category = "unknown"
             try:
                 completion = cls.client.chat.completions.create(
-                    model="openai/gpt-oss-20b",
+                    model="openai/gpt-oss-20b",  # Возвращаем рабочую модель, которая поддерживается твоим ключом
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": msg_clean}
@@ -103,14 +97,15 @@ class GroqAIRouter:
             except Exception as e:
                 return {
                     "success": False,
-                    "reply": f"⚠️ Ошибка обращения к Groq API: {str(e)}"
+                    "reply": f"⚠️ Ошибка вызова Groq API: {str(e)}"
                 }
 
-            # ЕСЛИ ИИ НЕ ПОНЯЛ — ЧЕСТНЫЙ ОТКАЗ БЕЗ ПОДМЕНЫ НА КАФЕ И БЕЗ IF/ELSE ПРОВЕРОК
+            # СТРОГО И ЧЕСТНО: никаких скрытых if/else проверок слов в Python. 
+            # Если модель вернула unknown — выдаем честный отказ.
             if category == "unknown":
                 return {
                     "success": False,
-                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте сформулировать иначе."
+                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
                 }
 
             osm_queries = {
