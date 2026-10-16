@@ -67,12 +67,12 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
+            # Базовый промпт для классификации
             system_prompt = (
-                "You are the core semantic intent classifier for an autonomous geospatial navigation system. "
-                "Map the user's natural language query into EXACTLY one of these categories: "
+                "Classify the user input strictly into one of these categories: "
                 "cafe, pharmacy, supermarket, fuel, cinema. "
-                "If the query does not clearly match any of these categories, output 'unknown'. "
-                "Return ONLY the category name in lowercase, with zero punctuation, quotes, or additional text."
+                "If it does not match any, output: unknown. "
+                "Return ONLY the category name in lowercase, no quotes, no extra text."
             )
 
             category = "unknown"
@@ -96,7 +96,7 @@ class GroqAIRouter:
             except Exception as e:
                 return {
                     "success": False,
-                    "reply": f"⚠️ Ошибка обращения к ИИ-сервису Groq: {str(e)}"
+                    "reply": f"⚠️ Ошибка обращения к ИИ: {str(e)}"
                 }
 
             if category == "unknown":
@@ -124,10 +124,18 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=6.0) as client:
-                    # Сразу делаем надежный поиск по Минску для выбранной категории, чтобы точки гарантированно находились
-                    url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=15"
-                    resp = client.get(url_global, headers=headers)
+                    # 1. Сначала ищем в окрестностях координат пользователя с ограничением viewbox (квадрат ~15км вокруг точки)
+                    delta = 0.15
+                    viewbox = f"{lon-delta},{lat-delta},{lon+delta},{lat+delta}"
+                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=20&lat={lat}&lon={lon}&viewbox={viewbox}&bounded=0"
+                    resp = client.get(url, headers=headers)
                     results = resp.json()
+                    
+                    # 2. Если локально ничего не нашлось, делаем широкий поиск по Минску
+                    if not results:
+                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=20"
+                        resp = client.get(url_global, headers=headers)
+                        results = resp.json()
 
                     if results:
                         sorted_places = []
@@ -144,6 +152,7 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
+                        # Строгая сортировка по возрастанию расстояния (ближайшие первыми)
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
@@ -170,7 +179,7 @@ class GroqAIRouter:
                 f"📝 <b>Описание:</b> {item['desc']}<br><br>"
                 f"<button onclick=\"previewAiPoint({p_lat}, {p_lon}, '{short_name}')\" style='padding:4px 8px; background:#2980b9; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>👁️ Посмотреть</button> "
                 f"<button onclick=\"selectAiPoint({p_lat}, {p_lon}, '{short_name}')\" style='padding:4px 8px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>➕ Добавить в маршрут</button> "
-                f"<button onclick=\"requestAlternative()\" style='padding:4px 8px; background:#e67e22; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>🔄 Другой</button>"
+                f"<button onclick=\"requestAlternative()» style='padding:4px 8px; background:#e67e22; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>🔄 Другой</button>"
             )
 
             return {
