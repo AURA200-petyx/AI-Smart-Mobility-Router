@@ -51,7 +51,7 @@ class GroqAIRouter:
             try:
                 # Запрос к актуальной нейросети на инфраструктуре Groq
                 completion = cls.client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama3-8b-8192",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": msg_clean}
