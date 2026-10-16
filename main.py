@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
-from ai_router import AIRouter
+from ai_router import GroqAIRouter
 
 app = FastAPI(title="AI Smart Mobility Router")
 
@@ -39,7 +39,7 @@ async def read_root(request: Request):
 @app.post("/api/analyze-route")
 async def analyze_route(data: RouteRequest):
     try:
-        result = AIRouter.analyze_and_route(
+        result = GroqAIRouter.analyze_and_route(
             grid=data.grid, 
             points=data.points, 
             optimization_mode=data.optimization_mode,
@@ -52,7 +52,7 @@ async def analyze_route(data: RouteRequest):
 
 @app.post("/api/ai-assistant")
 async def ai_assistant(data: AssistantRequest):
-    return AIRouter.process_natural_language_query(
+    return GroqAIRouter.process_natural_language_query(
         message=data.message, 
         lat=data.current_lat, 
         lon=data.current_lon, 
