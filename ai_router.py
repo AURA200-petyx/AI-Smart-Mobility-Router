@@ -27,14 +27,13 @@ class GroqAIRouter:
 
     @classmethod
     def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
-        """Полноценная алгоритмическая оптимизация маршрута в зависимости от режима"""
+        """Алгоритмическая оптимизация порядка точек ( Nearest Neighbor / TSP )"""
         pts = points or []
         if not pts:
             return {"status": "error", "message": "Нет точек для построения маршрута", "points": []}
         
         ordered_points = pts.copy()
         
-        # Если выбран режим оптимизации (например, ближайший сосед), реально пересчитываем порядок
         if optimization_mode in ["nearest", "tsp", "optimized"] and len(pts) > 2:
             start = pts[0]
             unvisited = pts[1:]
@@ -61,7 +60,7 @@ class GroqAIRouter:
 
     @classmethod
     def process_natural_language_query(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        """Чистый ИИ-классификатор на базе модели Groq без жестких подмен в коде"""
+        """Чистый семантический роутинг на базе Groq LLM без хардкода"""
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
@@ -70,17 +69,19 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Расширенный системный промпт, обучающий модель понимать сложный контекст и перекладывать его на категории
+            # Строгий промпт, требующий от LLM классифицировать любой свободный текст (даже "хочу посидеть за ноутбуком")
             system_prompt = (
-                "You are an advanced AI geospatial semantic router. "
-                "Analyze the user's intent and map it strictly to one of these categories: "
-                "cafe (includes restaurants, coffee, snacks, places to work with a laptop, sitting down, food), "
-                "pharmacy (includes medicines, drugs, doctors, health, pharmacy), "
-                "supermarket (includes groceries, stores, food shopping, supermarkets), "
-                "fuel (includes gas stations, petrol, fueling), "
-                "cinema (includes movies, films, entertainment). "
-                "If the intent does not fit any category, output 'unknown'. "
-                "Return ONLY the exact category name in lowercase, with no punctuation or explanation."
+                "You are an advanced AI semantic routing agent for an urban navigation system. "
+                "Your task is to analyze the user's intent and map it to one of these exact categories: "
+                "cafe, pharmacy, supermarket, fuel, cinema. "
+                "Rules:\n"
+                "- If the user mentions food, coffee, restaurants, sitting with a laptop, snacks, or resting, output 'cafe'.\n"
+                "- If the user mentions medicine, drugs, health, doctors, output 'pharmacy'.\n"
+                "- If the user mentions groceries, shopping, products, supermarket, output 'supermarket'.\n"
+                "- If the user mentions gas, fuel, refueling, car station, output 'fuel'.\n"
+                "- If the user mentions movies, films, cinema, entertainment, output 'cinema'.\n"
+                "- If no category matches at all, output 'unknown'.\n"
+                "Return ONLY the category name in lowercase, with no punctuation, formatting, or explanation."
             )
 
             category = "unknown"
@@ -92,7 +93,7 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=15
+                    max_tokens=10
                 )
                 
                 raw_content = completion.choices[0].message.content.strip().lower()
@@ -115,7 +116,7 @@ class GroqAIRouter:
                 }
 
             osm_queries = {
-                "cafe": {"tag": "cafe", "name": "Кафе / Ресторан", "desc": "Заведение общественного питания и отдыха."},
+                "cafe": {"tag": "cafe", "name": "Кафе / Ресторан", "desc": "Заведение общественного питания."},
                 "pharmacy": {"tag": "pharmacy", "name": "Аптека", "desc": "Аптечный пункт медицинских товаров."},
                 "supermarket": {"tag": "supermarket", "name": "Супермаркет", "desc": "Продуктовый магазин."},
                 "fuel": {"tag": "fuel", "name": "Автозаправка (АЗС)", "desc": "Топливная станция."},
@@ -129,31 +130,34 @@ class GroqAIRouter:
                 lat, lon = 53.9006, 27.5590
 
             try:
-                delta = 0.05
-                viewbox = f"{lon-delta},{lat+delta},{lon+delta},{lat-delta}"
-                url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=15&lat={lat}&lon={lon}&viewbox={viewbox}&bounded=1"
                 headers = {"User-Agent": "AISmartUrbanRouter/10.0"}
+                results = []
                 
-                with httpx.Client(timeout=5.0) as client:
+                with httpx.Client(timeout=6.0) as client:
+                    # Поиск через Nominatim с учетом контекста координат
+                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=15&lat={lat}&lon={lon}"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
                     
                     if not results:
-                        url_fallback = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=15&lat={lat}&lon={lon}"
-                        resp = client.get(url_fallback, headers=headers)
+                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=15"
+                        resp = client.get(url_global, headers=headers)
                         results = resp.json()
 
                     if results:
                         sorted_places = []
                         for place in results:
-                            p_lat = float(place["lat"])
-                            p_lon = float(place["lon"])
-                            dist = cls.calculate_distance(lat, lon, p_lat, p_lon)
-                            sorted_places.append({
-                                "place": place,
-                                "dist": dist,
-                                "desc": target_info["desc"]
-                            })
+                            try:
+                                p_lat = float(place["lat"])
+                                p_lon = float(place["lon"])
+                                dist = cls.calculate_distance(lat, lon, p_lat, p_lon)
+                                sorted_places.append({
+                                    "place": place,
+                                    "dist": dist,
+                                    "desc": target_info["desc"]
+                                })
+                            except (KeyError, ValueError):
+                                continue
                         
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
