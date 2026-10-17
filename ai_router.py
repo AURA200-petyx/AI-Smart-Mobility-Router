@@ -59,7 +59,6 @@ class GroqAIRouter:
 
     @classmethod
     def process_natural_language_query(cls, message: str, lat: Optional[Any] = None, lon: Optional[Any] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        # ВЫВОДИМ В ЛОГИ РЕНДЕРА ВСЕ, ЧТО ПРИХОДИТ С ФРОНТЕНДА
         print(f"[DEBUG COORDS]: action={action}, raw_lat={lat} (type: {type(lat)}), raw_lon={lon} (type: {type(lon)}), message={message}")
 
         if action == "alternative":
@@ -140,17 +139,16 @@ class GroqAIRouter:
                 headers = {"User-Agent": "AISmartUrbanRouter/10.0"}
                 results = []
                 
-                with httpx.Client(timeout=6.0) as client:
-                    # Ищем объекты в радиусе вокруг переданных координат
-                    delta = 0.15
-                    viewbox = f"{f_lon-delta},{f_lat-delta},{f_lon+delta},{f_lat+delta}"
-                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=25&lat={f_lat}&lon={f_lon}&viewbox={viewbox}&bounded=0"
+                with httpx.Client(timeout=8.0) as client:
+                    # Точный запрос по тегу amenity вокруг координат пользователя
+                    url = f"https://nominatim.openstreetmap.org/search?amenity={target_info['tag']}&format=json&limit=30&lat={f_lat}&lon={f_lon}&addressdetails=1"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
 
+                    # Если точечный поиск пустой, делаем текстовый запрос по Минску
                     if not results:
-                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=25"
-                        resp = client.get(url_global, headers=headers)
+                        url_text = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=30"
+                        resp = client.get(url_text, headers=headers)
                         results = resp.json()
 
                     if results:
@@ -168,10 +166,12 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
+                        # Строгая сортировка по возрастанию расстояния (ближайшие первыми)
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
-            except Exception:
+            except Exception as e:
+                print(f"[DEBUG OSM ERROR]: {str(e)}")
                 pass
 
         if cls._last_results:
