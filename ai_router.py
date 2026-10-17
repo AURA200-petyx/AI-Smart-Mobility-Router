@@ -23,7 +23,8 @@ class GroqAIRouter:
         
         a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return abs(R * c)  # Всегда строго положительное расстояние в метрах
+        # СТРОГО ПОЛОЖИТЕЛЬНОЕ ЗНАЧЕНИЕ МЕТРОВ БЕЗ МИНУСОВ
+        return float(abs(R * c))
 
     @classmethod
     def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
@@ -67,18 +68,12 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Улучшенный промпт с поддержкой русских синонимов для идеального понимания запросов
             system_prompt = (
                 "You are an AI intent classifier for an urban navigation system. "
-                "Classify the user input (which can be in English or Russian, including words like магазин, продукты, кафе, аптека, кино, заправка) "
-                "into EXACTLY one of these categories: "
-                "cafe (кафе, рестораны, кофе, поесть), "
-                "pharmacy (аптека, лекарства), "
-                "supermarket (магазин, супермаркет, продукты, маркет), "
-                "fuel (заправка, азс, бензин), "
-                "cinema (кино, кинотеатр, фильм). "
+                "Classify the user input into EXACTLY one of these categories: "
+                "cafe, pharmacy, supermarket, fuel, cinema. "
                 "If it does not match any, output: unknown. "
-                "Return ONLY the category name in lowercase (cafe, pharmacy, supermarket, fuel, cinema, or unknown), no quotes, no extra words."
+                "Return ONLY the category name in lowercase, no quotes, no extra words."
             )
 
             category = "unknown"
@@ -113,7 +108,7 @@ class GroqAIRouter:
             if category == "unknown":
                 return {
                     "success": False,
-                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте сформулировать иначе."
+                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
                 }
 
             osm_queries = {
@@ -142,7 +137,6 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=8.0) as client:
-                    # Надежный поисковый запрос по Минску с большим лимитом (50 результатов)
                     url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=50"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
@@ -153,17 +147,18 @@ class GroqAIRouter:
                             try:
                                 p_lat = float(place["lat"])
                                 p_lon = float(place["lon"])
-                                # Считаем точное расстояние от текущего маркера до каждого объекта
                                 dist = cls.calculate_distance(f_lat, f_lon, p_lat, p_lon)
-                                sorted_places.append({
-                                    "place": place,
-                                    "dist": dist,
-                                    "desc": target_info["desc"]
-                                })
+                                
+                                # ОТСЕКАЕМ ВСЁ, ЧТО ДАЛЬШЕ 30 КИЛОМЕТРОВ (исключаем баги геокодера со всей планеты)
+                                if dist <= 30000:
+                                    sorted_places.append({
+                                        "place": place,
+                                        "dist": dist,
+                                        "desc": target_info["desc"]
+                                    })
                             except (KeyError, ValueError):
                                 continue
                         
-                        # ЖЕСТКАЯ СОРТИРОВКА: самые близкие метры — всегда на первом месте (Вариант 1)
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
@@ -175,7 +170,7 @@ class GroqAIRouter:
             place = item["place"]
             p_lat = float(place["lat"])
             p_lon = float(place["lon"])
-            dist = int(item["dist"])
+            dist = int(abs(item["dist"]))  # Чистое положительное число метров без знака минус
             
             raw_name = place.get("display_name", "").split(",")[0]
             if raw_name.lower() in ["cafe", "pharmacy", "supermarket", "fuel", "cinema", "amenity"]:
@@ -186,7 +181,7 @@ class GroqAIRouter:
             reply_text = (
                 f"🤖 <b>Groq AI Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
                 f"📍 <b>Найдено:</b> {short_name}<br>"
-                f"📏 <b>Прямое расстояние:</b> ~{dist} метров<br>"
+                f"📏 <b>Прямое расстояние:</b> ~{dist} метров<br>"  # Убран дефис, только точное число метров
                 f"📝 <b>Описание:</b> {item['desc']}<br><br>"
                 f"<button onclick=\"previewAiPoint({p_lat}, {p_lon}, '{short_name}')\" style='padding:4px 8px; background:#2980b9; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>👁️ Посмотреть</button> "
                 f"<button onclick=\"selectAiPoint({p_lat}, {p_lon}, '{short_name}')\" style='padding:4px 8px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>➕ Добавить в маршрут</button> "
