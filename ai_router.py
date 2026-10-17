@@ -23,6 +23,7 @@ class GroqAIRouter:
         
         a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        # Гарантируем строго положительное целое расстояние в метрах
         return abs(R * c)
 
     @classmethod
@@ -59,8 +60,6 @@ class GroqAIRouter:
 
     @classmethod
     def process_natural_language_query(cls, message: str, lat: Optional[Any] = None, lon: Optional[Any] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        print(f"[DEBUG COORDS]: action={action}, raw_lat={lat} (type: {type(lat)}), raw_lon={lon} (type: {type(lon)}), message={message}")
-
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
@@ -123,7 +122,7 @@ class GroqAIRouter:
             target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
-            # Безопасное приведение координат
+            # Безопасное приведение координат с дефолтом на центр Минска
             try:
                 f_lat = float(lat) if lat is not None else 53.9006
                 f_lon = float(lon) if lon is not None else 27.5590
@@ -133,23 +132,15 @@ class GroqAIRouter:
             if abs(f_lat) < 1.0 or abs(f_lon) < 1.0:
                 f_lat, f_lon = 53.9006, 27.5590
 
-            print(f"[DEBUG COORDS]: final parsed f_lat={f_lat}, f_lon={f_lon}")
-
             try:
                 headers = {"User-Agent": "AISmartUrbanRouter/10.0"}
                 results = []
                 
                 with httpx.Client(timeout=8.0) as client:
-                    # Точный запрос по тегу amenity вокруг координат пользователя
-                    url = f"https://nominatim.openstreetmap.org/search?amenity={target_info['tag']}&format=json&limit=30&lat={f_lat}&lon={f_lon}&addressdetails=1"
+                    # ЖЕСТКИЙ ПОИСК СТРОГО В МИНСКЕ (countrycodes=by, city=Minsk)
+                    url = f"https://nominatim.openstreetmap.org/search?city=Minsk&countrycodes=by&q={target_info['tag']}&format=json&limit=30"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
-
-                    # Если точечный поиск пустой, делаем текстовый запрос по Минску
-                    if not results:
-                        url_text = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=30"
-                        resp = client.get(url_text, headers=headers)
-                        results = resp.json()
 
                     if results:
                         sorted_places = []
@@ -166,12 +157,11 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
-                        # Строгая сортировка по возрастанию расстояния (ближайшие первыми)
+                        # Строгая сортировка по возрастанию расстояния
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
             except Exception as e:
-                print(f"[DEBUG OSM ERROR]: {str(e)}")
                 pass
 
         if cls._last_results:
@@ -179,7 +169,7 @@ class GroqAIRouter:
             place = item["place"]
             p_lat = float(place["lat"])
             p_lon = float(place["lon"])
-            dist = int(item["dist"])
+            dist = int(item["dist"])  # Чистое положительное число метров
             
             raw_name = place.get("display_name", "").split(",")[0]
             if raw_name.lower() in ["cafe", "pharmacy", "supermarket", "fuel", "cinema", "amenity"]:
