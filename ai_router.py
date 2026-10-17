@@ -133,9 +133,21 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=6.0) as client:
-                    url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=15"
-                    resp = client.get(url_global, headers=headers)
+                    # ДЕЛАЕМ ПОИСК ИМЕННО ВОКРУГ КООРДИНАТ ПОЛЬЗОВАТЕЛЯ (Bounding Box / Viewbox)
+                    # Создаем квадрат примерно 20х20 км вокруг текущей точки
+                    delta = 0.15 
+                    viewbox = f"{lon-delta},{lat-delta},{lon+delta},{lat+delta}"
+                    
+                    # Запрос ищет категорию рядом с нашими координатами
+                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=20&lat={lat}&lon={lon}&viewbox={viewbox}&bounded=0"
+                    resp = client.get(url, headers=headers)
                     results = resp.json()
+                    
+                    # Если рядом ничего не нашлось, расширяем до общего поиска по городу
+                    if not results:
+                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=20"
+                        resp = client.get(url_global, headers=headers)
+                        results = resp.json()
 
                     if results:
                         sorted_places = []
@@ -152,12 +164,13 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
+                        # ЖЕСТКАЯ СОРТИРОВКА ПО РАССТОЯНИЮ: БЛИЖАЙШИЕ ПЕРВЫМИ
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
             except Exception:
                 pass
-
+            
         if cls._last_results:
             item = cls._last_results[cls._last_index]
             place = item["place"]
