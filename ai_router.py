@@ -69,11 +69,15 @@ class GroqAIRouter:
             msg_clean = message.strip()
             
             system_prompt = (
-                "You are an AI intent classifier for an urban navigation system. "
-                "Classify the user input into EXACTLY one of these categories: "
-                "cafe, pharmacy, supermarket, fuel, cinema. "
-                "If it does not match any, output: unknown. "
-                "Return ONLY the category name in lowercase, no quotes, no extra words."
+                "You are an AI intent classifier for an urban navigation system in Minsk.\n"
+                "Your task is to correct any typos, misspellings, or slang in the user's input and classify it into EXACTLY ONE of these 5 categories:\n"
+                "1. cafe (кафе, кофейня, ресторан, поесть, каве, кофе)\n"
+                "2. pharmacy (аптека, оптека, обтека, лекарства, медикаменты)\n"
+                "3. supermarket (супермаркет, магазин, продукты, маркет, супирмаркет)\n"
+                "4. fuel (заправка, азс, бензин, заправка, автозаправка)\n"
+                "5. cinema (кинотеатр, кино, фильм, кина)\n\n"
+                "If the input is completely unrelated, output: unknown.\n"
+                "IMPORTANT: Output ONLY the category name in lowercase (cafe, pharmacy, supermarket, fuel, cinema, or unknown) with NO punctuation or additional text."
             )
 
             category = "unknown"
@@ -111,15 +115,21 @@ class GroqAIRouter:
                     "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
                 }
 
-            osm_queries = {
-                "cafe": {"tag": "cafe", "name": "Кафе / Ресторан", "desc": "Заведение общественного питания."},
-                "pharmacy": {"tag": "pharmacy", "name": "Аптека", "desc": "Аптечный пункт."},
-                "supermarket": {"tag": "supermarket", "name": "Супермаркет", "desc": "Продуктовый магазин."},
-                "fuel": {"tag": "fuel", "name": "АЗС", "desc": "Топливная станция."},
-                "cinema": {"tag": "cinema", "name": "Кинотеатр", "desc": "Кинотеатр."}
+            category_mapping = {
+                "cafe": ["cafe", "кафе", "ресторан", "кофейня"],
+                "pharmacy": ["pharmacy", "аптека", "оптека", "обтека", "лекарств"],
+                "supermarket": ["supermarket", "супермаркет", "магазин", "продукты"],
+                "fuel": ["fuel", "заправка", "азс", "бензин"],
+                "cinema": ["cinema", "кинотеатр", "кино"]
             }
+
+            category = "unknown"
+            for cat_key, keywords in category_mapping.items():
+                if any(kw in raw_content for kw in keywords):
+                    category = cat_key
+                    break
             
-            target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
+            target_info =category_mapping.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
             # Безопасное приведение координат пользователя
