@@ -358,121 +358,123 @@
         }
 
         async function buildRoute() {
-            if (waypoints.length < 2) {
-                showAiToast('⚠️ Добавьте хотя бы две точки на карту!');
-                return;
-            }
+    if (waypoints.length < 2) {
+        showAiToast('⚠️ Добавьте хотя бы две точки на карту!');
+        return;
+    }
 
-            const routeSelect = document.getElementById('route-mode');
-            const routeMode = routeSelect ? routeSelect.value : 'sequence';
+    const routeSelect = document.getElementById('route-mode');
+    const routeMode = routeSelect ? routeSelect.value : 'sequence';
 
-            const transportSelect = document.getElementById('transport-mode');
-            const transportProfile = transportSelect ? transportSelect.value : 'driving';
+    const transportSelect = document.getElementById('transport-mode');
+    const transportProfile = transportSelect ? transportSelect.value : 'driving';
 
-            let pointsPayload = waypoints.map(wp => ({
-                id: wp.id,
-                lat: wp.latlng.lat,
-                lon: wp.latlng.lng,
-                name: wp.name
-            }));
+    let pointsPayload = waypoints.map(wp => ({
+        id: wp.id,
+        lat: wp.latlng.lat,
+        lon: wp.latlng.lng,
+        name: wp.name
+    }));
 
-            try {
-                const res = await fetch('/api/analyze-route', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        points: pointsPayload, 
-                        mode: routeMode, 
-                        optimization_mode: routeMode 
-                    })
-                });
-                
-                const aiData = await res.json();
+    try {
+        const res = await fetch('/api/analyze-route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                points: pointsPayload, 
+                mode: routeMode, 
+                optimization_mode: routeMode 
+            })
+        });
+        
+        const aiData = await res.json();
 
-                if (aiData.status === 'error') {
-                    showAiToast(aiData.message, 8000);
-                    return;
-                }
+        if (aiData.status === 'error') {
+            showAiToast(aiData.message, 8000);
+            return;
+        }
 
-                if (aiData.optimized_waypoints && aiData.optimized_waypoints.length > 0) {
-                    let reorderedWaypoints = [];
-                    aiData.optimized_waypoints.forEach(opt => {
-                        let found = waypoints.find(wp => wp.id === opt.id);
-                        if (found) reorderedWaypoints.push(found);
-                    });
+        // ИСПРАВЛЕНИЕ: проверяем и points (от бэкенда), и optimized_waypoints для совместимости
+        const returnedPoints = aiData.points || aiData.optimized_waypoints;
+        if (returnedPoints && returnedPoints.length > 0) {
+            let reorderedWaypoints = [];
+            returnedPoints.forEach(opt => {
+                let found = waypoints.find(wp => wp.id === opt.id);
+                if (found) reorderedWaypoints.push(found);
+            });
 
-                    if (reorderedWaypoints.length === waypoints.length) {
-                        waypoints = reorderedWaypoints;
-                        updateMarkersVisuals();
-                    }
-                }
-            } catch(e) {
-                console.warn("Ошибка связи с сервером оптимизации:", e);
-            }
-
-            if (routeLayer) { 
-                map.removeLayer(routeLayer); 
-                routeLayer = null; 
-            }
-
-            let coordsString = waypoints.map(wp => `${wp.latlng.lng},${wp.latlng.lat}`).join(';');
-            
-            let osrmUrl = `https://router.project-osrm.org/route/v1/${transportProfile}/${coordsString}?overview=full&geometries=geojson`;
-            
-            if (transportProfile === 'walking') {
-                osrmUrl = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coordsString}?overview=full&geometries=geojson`;
-            } else if (transportProfile === 'cycling') {
-                osrmUrl = `https://routing.openstreetmap.de/routed-bike/route/v1/bike/${coordsString}?overview=full&geometries=geojson`;
-            }
-
-            try {
-                showAiToast('🔄 Строим маршрут...');
-                const response = await fetch(osrmUrl);
-                const data = await response.json();
-
-                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-                    const route = data.routes[0];
-                    const distanceMeters = route.distance;
-                    const distanceKm = (distanceMeters / 1000).toFixed(2);
-                    
-                    let durationSec = route.duration;
-                    if (transportProfile === 'walking') {
-                        durationSec = distanceMeters / 1.33; 
-                    } else if (transportProfile === 'cycling') {
-                        durationSec = distanceMeters / 4.16; 
-                    }
-
-                    const durationMin = Math.max(1, Math.round(durationSec / 60));
-                    const hours = Math.floor(durationMin / 60);
-                    const minutes = durationMin % 60;
-                    let timeStr = hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
-
-                    let routeColor = '#2980b9';
-                    if (transportProfile === 'cycling') routeColor = '#27ae60';
-                    if (transportProfile === 'walking') routeColor = '#e67e22';
-
-                    routeLayer = L.geoJSON(route.geometry, {
-                        style: { color: routeColor, weight: 6, opacity: 0.85 }
-                    }).addTo(map);
-
-                    map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
-
-                    // ВЫВОДИМ ИНФОРМАЦИЮ В ПОСТОЯННУЮ БОКОВУЮ ПЛАШКУ
-                    const badge = document.getElementById('route-info-badge');
-                    if (badge) {
-                        badge.innerHTML = `📍 ${distanceKm} км<br>⏱️ ~${timeStr}`;
-                        badge.style.display = 'block';
-                    }
-
-                    showAiToast(`✅ Маршрут успешно построен!`, 4000);
-                } else {
-                    showAiToast('⚠️ Сервис маршрутизации не смог построить путь.');
-                }
-            } catch(err) {
-                console.error("Routing Error:", err);
-                showAiToast('⚠️ Ошибка запроса к серверу маршрутов.');
+            if (reorderedWaypoints.length === waypoints.length) {
+                waypoints = reorderedWaypoints;
+                updateMarkersVisuals();
             }
         }
+    } catch(e) {
+        console.warn("Ошибка связи с сервером оптимизации:", e);
+    }
+
+    if (routeLayer) { 
+        map.removeLayer(routeLayer); 
+        routeLayer = null; 
+    }
+
+    let coordsString = waypoints.map(wp => `${wp.latlng.lng},${wp.latlng.lat}`).join(';');
+    
+    let osrmUrl = `https://router.project-osrm.org/route/v1/${transportProfile}/${coordsString}?overview=full&geometries=geojson`;
+    
+    if (transportProfile === 'walking') {
+        osrmUrl = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coordsString}?overview=full&geometries=geojson`;
+    } else if (transportProfile === 'cycling') {
+        osrmUrl = `https://routing.openstreetmap.de/routed-bike/route/v1/bike/${coordsString}?overview=full&geometries=geojson`;
+    }
+
+    try {
+        showAiToast('🔄 Строим маршрут...');
+        const response = await fetch(osrmUrl);
+        const data = await response.json();
+
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+            const route = data.routes[0];
+            const distanceMeters = route.distance;
+            const distanceKm = (distanceMeters / 1000).toFixed(2);
+            
+            let durationSec = route.duration;
+            if (transportProfile === 'walking') {
+                durationSec = distanceMeters / 1.33; 
+            } else if (transportProfile === 'cycling') {
+                durationSec = distanceMeters / 4.16; 
+            }
+
+            const durationMin = Math.max(1, Math.round(durationSec / 60));
+            const hours = Math.floor(durationMin / 60);
+            const minutes = durationMin % 60;
+            let timeStr = hours > 0 ? `${hours} ч ${minutes} мин` : `${minutes} мин`;
+
+            let routeColor = '#2980b9';
+            if (transportProfile === 'cycling') routeColor = '#27ae60';
+            if (transportProfile === 'walking') routeColor = '#e67e22';
+
+            routeLayer = L.geoJSON(route.geometry, {
+                style: { color: routeColor, weight: 6, opacity: 0.85 }
+            }).addTo(map);
+
+            map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
+
+            // ВЫВОДИМ ИНФОРМАЦИЮ В ПОСТОЯННУЮ БОКОВУЮ ПЛАШКУ
+            const badge = document.getElementById('route-info-badge');
+            if (badge) {
+                badge.innerHTML = `📍 ${distanceKm} км<br>⏱️ ~${timeStr}`;
+                badge.style.display = 'block';
+            }
+
+            showAiToast(`✅ Маршрут успешно построен!`, 4000);
+        } else {
+            showAiToast('⚠️ Сервис маршрутизации не смог построить путь.');
+        }
+    } catch(err) {
+        console.error("Routing Error:", err);
+        showAiToast('⚠️ Ошибка запроса к серверу маршрутов.');
+    }
+}
 
         function showAiToast(text, duration = 6000) {
             const toast = document.getElementById('ai-toast');
