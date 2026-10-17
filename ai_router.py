@@ -23,7 +23,6 @@ class GroqAIRouter:
         
         a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        # СТРОГО ПОЛОЖИТЕЛЬНОЕ ЗНАЧЕНИЕ МЕТРОВ БЕЗ МИНУСОВ
         return float(abs(R * c))
 
     @classmethod
@@ -68,19 +67,21 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
+            # Умный промпт с учетом опечаток и синонимов
             system_prompt = (
-                "You are an AI intent classifier for an urban navigation system in Minsk.\n"
-                "Your task is to correct any typos, misspellings, or slang in the user's input and classify it into EXACTLY ONE of these 5 categories:\n"
-                "1. cafe (кафе, кофейня, ресторан, поесть, каве, кофе)\n"
-                "2. pharmacy (аптека, оптека, обтека, лекарства, медикаменты)\n"
-                "3. supermarket (супермаркет, магазин, продукты, маркет, супирмаркет)\n"
-                "4. fuel (заправка, азс, бензин, заправка, автозаправка)\n"
-                "5. cinema (кинотеатр, кино, фильм, кина)\n\n"
-                "If the input is completely unrelated, output: unknown.\n"
-                "IMPORTANT: Output ONLY the category name in lowercase (cafe, pharmacy, supermarket, fuel, cinema, or unknown) with NO punctuation or additional text."
+                "You are an AI intent classifier for an urban navigation system in Minsk. "
+                "Classify the user input (which may contain typos, misspellings, or Russian words) "
+                "into EXACTLY one of these categories: "
+                "cafe (кафе, кофейня, ресторан, поесть, каве, кофе), "
+                "pharmacy (аптека, оптека, обтека, лекарства, медикаменты), "
+                "supermarket (супермаркет, магазин, продукты, маркет, супирмаркет), "
+                "fuel (заправка, азс, бензин), "
+                "cinema (кинотеатр, кино, фильм). "
+                "If it does not match any, output: unknown. "
+                "Return ONLY the category name in lowercase (cafe, pharmacy, supermarket, fuel, cinema, or unknown), no quotes, no extra words."
             )
 
-            category = "unknown"
+            raw_content = ""
             try:
                 completion = cls.client.chat.completions.create(
                     model="openai/gpt-oss-20b",
@@ -89,7 +90,7 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=175
+                    max_tokens=150
                 )
                 
                 msg_obj = completion.choices[0].message
@@ -98,23 +99,13 @@ class GroqAIRouter:
                     raw_content = str(msg_obj.reasoning)
                 
                 raw_content = raw_content.strip().lower()
-                valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
-                for cat in valid_categories:
-                    if cat in raw_content:
-                        category = cat
-                        break
             except Exception as e:
                 return {
                     "success": False,
                     "reply": f"⚠️ Ошибка вызова Groq API: {str(e)}"
                 }
 
-            if category == "unknown":
-                return {
-                    "success": False,
-                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
-                }
-
+            # Маппинг для надежного распознавания ответов модели с учетом опечаток
             category_mapping = {
                 "cafe": ["cafe", "кафе", "ресторан", "кофейня"],
                 "pharmacy": ["pharmacy", "аптека", "оптека", "обтека", "лекарств"],
@@ -128,8 +119,22 @@ class GroqAIRouter:
                 if any(kw in raw_content for kw in keywords):
                     category = cat_key
                     break
+
+            if category == "unknown":
+                return {
+                    "success": False,
+                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте сформулировать иначе."
+                }
+
+            osm_queries = {
+                "cafe": {"tag": "cafe", "name": "Кафе / Ресторан", "desc": "Заведение общественного питания."},
+                "pharmacy": {"tag": "pharmacy", "name": "Аптека", "desc": "Аптечный пункт."},
+                "supermarket": {"tag": "supermarket", "name": "Супермаркет", "desc": "Продуктовый магазин."},
+                "fuel": {"tag": "fuel", "name": "АЗС", "desc": "Топливная станция."},
+                "cinema": {"tag": "cinema", "name": "Кинотеатр", "desc": "Кинотеатр."}
+            }
             
-            target_info =category_mapping.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
+            target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
             # Безопасное приведение координат пользователя
@@ -147,8 +152,8 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=8.0) as client:
-                    # ИЩЕМ СТРОГО ВОКРУГ КООРДИНАТ ПОЛЬЗОВАТЕЛЯ (параметры lat, lon, radius/viewbox)
-                    delta = 0.05  # примерно 5 км вокруг точки
+                    # Поиск строго вокруг координат пользователя (в радиусе видимости)
+                    delta = 0.05
                     viewbox = f"{f_lon-delta},{f_lat-delta},{f_lon+delta},{f_lat+delta}"
                     
                     url = (
@@ -159,7 +164,6 @@ class GroqAIRouter:
                     resp = client.get(url, headers=headers)
                     results = resp.json()
 
-                    # Если в узком радиусе ничего не нашлось, делаем расширенный поиск по Минску
                     if not results:
                         url_fallback = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=50"
                         resp = client.get(url_fallback, headers=headers)
@@ -173,7 +177,7 @@ class GroqAIRouter:
                                 p_lon = float(place["lon"])
                                 dist = cls.calculate_distance(f_lat, f_lon, p_lat, p_lon)
                                 
-                                if dist <= 30000: # фильтр до 30 км
+                                if dist <= 30000:
                                     sorted_places.append({
                                         "place": place,
                                         "dist": dist,
@@ -182,7 +186,6 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
-                        # Жесткая сортировка: теперь Вариант 1 — это гарантированно САМАЯ БЛИЗКАЯ точка в метрах
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
@@ -194,7 +197,7 @@ class GroqAIRouter:
             place = item["place"]
             p_lat = float(place["lat"])
             p_lon = float(place["lon"])
-            dist = int(abs(item["dist"]))  # Чистое положительное число метров без знака минус
+            dist = int(abs(item["dist"]))
             
             raw_name = place.get("display_name", "").split(",")[0]
             if raw_name.lower() in ["cafe", "pharmacy", "supermarket", "fuel", "cinema", "amenity"]:
@@ -205,7 +208,7 @@ class GroqAIRouter:
             reply_text = (
                 f"🤖 <b>Groq AI Agent (Вариант {cls._last_index + 1} из {len(cls._last_results)}):</b><br>"
                 f"📍 <b>Найдено:</b> {short_name}<br>"
-                f"📏 <b>Прямое расстояние:</b> ~{dist} метров<br>"  # Убран дефис, только точное число метров
+                f"📏 <b>Прямое расстояние:</b> ~{dist} метров<br>"
                 f"📝 <b>Описание:</b> {item['desc']}<br><br>"
                 f"<button onclick=\"previewAiPoint({p_lat}, {p_lon}, '{short_name}')\" style='padding:4px 8px; background:#2980b9; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>👁️ Посмотреть</button> "
                 f"<button onclick=\"selectAiPoint({p_lat}, {p_lon}, '{short_name}')\" style='padding:4px 8px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;'>➕ Добавить в маршрут</button> "
