@@ -23,7 +23,7 @@ class GroqAIRouter:
         
         a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
+        return abs(R * c)  # Гарантируем положительное значение расстояния
 
     @classmethod
     def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
@@ -58,7 +58,7 @@ class GroqAIRouter:
         }
 
     @classmethod
-    def process_natural_language_query(cls, message: str, lat: Optional[float] = None, lon: Optional[float] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+    def process_natural_language_query(cls, message: str, lat: Optional[Any] = None, lon: Optional[Any] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
@@ -84,19 +84,15 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=150  # Увеличили лимит с 10 до 150 токенов, чтобы модели хватило на reasoning и content
+                    max_tokens=150
                 )
                 
-                print(f"[DEBUG FULL COMPLETION]: {completion}")
-
-                # Безопасно вытаскиваем текст: проверяем и content, и reasoning на случай, если модель пишет туда
                 msg_obj = completion.choices[0].message
                 raw_content = getattr(msg_obj, "content", "") or ""
                 if not raw_content and hasattr(msg_obj, "reasoning"):
                     raw_content = str(msg_obj.reasoning)
                 
                 raw_content = raw_content.strip().lower()
-                
                 valid_categories = ["cafe", "pharmacy", "supermarket", "fuel", "cinema"]
                 for cat in valid_categories:
                     if cat in raw_content:
@@ -125,27 +121,30 @@ class GroqAIRouter:
             target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
-            if not lat or not lon or abs(lat) < 1.0 or abs(lon) < 1.0:
-                lat, lon = 53.9006, 27.5590
+            # Жесткая и безопасная конвертация входящих координат в float
+            try:
+                f_lat = float(lat) if lat is not None else 53.9006
+                f_lon = float(lon) if lon is not None else 27.5590
+            except (ValueError, TypeError):
+                f_lat, f_lon = 53.9006, 27.5590
+
+            if abs(f_lat) < 1.0 or abs(f_lon) < 1.0:
+                f_lat, f_lon = 53.9006, 27.5590
 
             try:
                 headers = {"User-Agent": "AISmartUrbanRouter/10.0"}
                 results = []
                 
                 with httpx.Client(timeout=6.0) as client:
-                    # ДЕЛАЕМ ПОИСК ИМЕННО ВОКРУГ КООРДИНАТ ПОЛЬЗОВАТЕЛЯ (Bounding Box / Viewbox)
-                    # Создаем квадрат примерно 20х20 км вокруг текущей точки
-                    delta = 0.15 
-                    viewbox = f"{lon-delta},{lat-delta},{lon+delta},{lat+delta}"
-                    
-                    # Запрос ищет категорию рядом с нашими координатами
-                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=20&lat={lat}&lon={lon}&viewbox={viewbox}&bounded=0"
+                    # Запрос к Nominatim с привязкой к координатам пользователя
+                    delta = 0.15
+                    viewbox = f"{f_lon-delta},{f_lat-delta},{f_lon+delta},{f_lat+delta}"
+                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=25&lat={f_lat}&lon={f_lon}&viewbox={viewbox}&bounded=0"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
-                    
-                    # Если рядом ничего не нашлось, расширяем до общего поиска по городу
+
                     if not results:
-                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=20"
+                        url_global = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=25"
                         resp = client.get(url_global, headers=headers)
                         results = resp.json()
 
@@ -155,7 +154,7 @@ class GroqAIRouter:
                             try:
                                 p_lat = float(place["lat"])
                                 p_lon = float(place["lon"])
-                                dist = cls.calculate_distance(lat, lon, p_lat, p_lon)
+                                dist = cls.calculate_distance(f_lat, f_lon, p_lat, p_lon)
                                 sorted_places.append({
                                     "place": place,
                                     "dist": dist,
@@ -164,13 +163,13 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
-                        # ЖЕСТКАЯ СОРТИРОВКА ПО РАССТОЯНИЮ: БЛИЖАЙШИЕ ПЕРВЫМИ
+                        # Строгая сортировка по возрастанию расстояния (ближайшие первыми)
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
             except Exception:
                 pass
-            
+
         if cls._last_results:
             item = cls._last_results[cls._last_index]
             place = item["place"]
