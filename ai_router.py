@@ -89,7 +89,7 @@ class GroqAIRouter:
                         {"role": "user", "content": msg_clean}
                     ],
                     temperature=0.0,
-                    max_tokens=1000
+                    max_tokens=175
                 )
                 
                 msg_obj = completion.choices[0].message
