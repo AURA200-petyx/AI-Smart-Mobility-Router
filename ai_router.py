@@ -23,8 +23,7 @@ class GroqAIRouter:
         
         a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        # Гарантируем строго положительное целое расстояние в метрах
-        return abs(R * c)
+        return abs(R * c)  # Всегда строго положительное расстояние в метрах
 
     @classmethod
     def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
@@ -68,12 +67,18 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
+            # Улучшенный промпт с поддержкой русских синонимов для идеального понимания запросов
             system_prompt = (
                 "You are an AI intent classifier for an urban navigation system. "
-                "Classify the user input into EXACTLY one of these categories: "
-                "cafe, pharmacy, supermarket, fuel, cinema. "
+                "Classify the user input (which can be in English or Russian, including words like магазин, продукты, кафе, аптека, кино, заправка) "
+                "into EXACTLY one of these categories: "
+                "cafe (кафе, рестораны, кофе, поесть), "
+                "pharmacy (аптека, лекарства), "
+                "supermarket (магазин, супермаркет, продукты, маркет), "
+                "fuel (заправка, азс, бензин), "
+                "cinema (кино, кинотеатр, фильм). "
                 "If it does not match any, output: unknown. "
-                "Return ONLY the category name in lowercase, no quotes, no extra words."
+                "Return ONLY the category name in lowercase (cafe, pharmacy, supermarket, fuel, cinema, or unknown), no quotes, no extra words."
             )
 
             category = "unknown"
@@ -108,7 +113,7 @@ class GroqAIRouter:
             if category == "unknown":
                 return {
                     "success": False,
-                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте спросить иначе."
+                    "reply": f"🤖 ИИ-ассистент проанализировал запрос («<i>{message}</i>») и не смог сопоставить его с объектами карты. Попробуйте сформулировать иначе."
                 }
 
             osm_queries = {
@@ -122,7 +127,7 @@ class GroqAIRouter:
             target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
-            # Безопасное приведение координат с дефолтом на центр Минска
+            # Безопасное приведение координат пользователя
             try:
                 f_lat = float(lat) if lat is not None else 53.9006
                 f_lon = float(lon) if lon is not None else 27.5590
@@ -137,8 +142,8 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=8.0) as client:
-                    # ЖЕСТКИЙ ПОИСК СТРОГО В МИНСКЕ (countrycodes=by, city=Minsk)
-                    url = f"https://nominatim.openstreetmap.org/search?city=Minsk&countrycodes=by&q={target_info['tag']}&format=json&limit=30"
+                    # Надежный поисковый запрос по Минску с большим лимитом (50 результатов)
+                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=50"
                     resp = client.get(url, headers=headers)
                     results = resp.json()
 
@@ -148,6 +153,7 @@ class GroqAIRouter:
                             try:
                                 p_lat = float(place["lat"])
                                 p_lon = float(place["lon"])
+                                # Считаем точное расстояние от текущего маркера до каждого объекта
                                 dist = cls.calculate_distance(f_lat, f_lon, p_lat, p_lon)
                                 sorted_places.append({
                                     "place": place,
@@ -157,11 +163,11 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
-                        # Строгая сортировка по возрастанию расстояния
+                        # ЖЕСТКАЯ СОРТИРОВКА: самые близкие метры — всегда на первом месте (Вариант 1)
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
-            except Exception as e:
+            except Exception:
                 pass
 
         if cls._last_results:
@@ -169,7 +175,7 @@ class GroqAIRouter:
             place = item["place"]
             p_lat = float(place["lat"])
             p_lon = float(place["lon"])
-            dist = int(item["dist"])  # Чистое положительное число метров
+            dist = int(item["dist"])
             
             raw_name = place.get("display_name", "").split(",")[0]
             if raw_name.lower() in ["cafe", "pharmacy", "supermarket", "fuel", "cinema", "amenity"]:
