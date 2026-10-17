@@ -23,7 +23,7 @@ class GroqAIRouter:
         
         a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return abs(R * c)  # Гарантируем положительное значение расстояния
+        return abs(R * c)
 
     @classmethod
     def analyze_and_route(cls, grid: Optional[List[Any]] = None, points: Optional[List[Dict[str, Any]]] = None, optimization_mode: Optional[str] = "sequence", mode: Optional[str] = "sequence", **kwargs) -> Dict[str, Any]:
@@ -59,6 +59,9 @@ class GroqAIRouter:
 
     @classmethod
     def process_natural_language_query(cls, message: str, lat: Optional[Any] = None, lon: Optional[Any] = None, action: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        # ВЫВОДИМ В ЛОГИ РЕНДЕРА ВСЕ, ЧТО ПРИХОДИТ С ФРОНТЕНДА
+        print(f"[DEBUG COORDS]: action={action}, raw_lat={lat} (type: {type(lat)}), raw_lon={lon} (type: {type(lon)}), message={message}")
+
         if action == "alternative":
             if cls._last_results:
                 cls._last_index = (cls._last_index + 1) % len(cls._last_results)
@@ -121,7 +124,7 @@ class GroqAIRouter:
             target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
-            # Жесткая и безопасная конвертация входящих координат в float
+            # Безопасное приведение координат
             try:
                 f_lat = float(lat) if lat is not None else 53.9006
                 f_lon = float(lon) if lon is not None else 27.5590
@@ -131,12 +134,14 @@ class GroqAIRouter:
             if abs(f_lat) < 1.0 or abs(f_lon) < 1.0:
                 f_lat, f_lon = 53.9006, 27.5590
 
+            print(f"[DEBUG COORDS]: final parsed f_lat={f_lat}, f_lon={f_lon}")
+
             try:
                 headers = {"User-Agent": "AISmartUrbanRouter/10.0"}
                 results = []
                 
                 with httpx.Client(timeout=6.0) as client:
-                    # Запрос к Nominatim с привязкой к координатам пользователя
+                    # Ищем объекты в радиусе вокруг переданных координат
                     delta = 0.15
                     viewbox = f"{f_lon-delta},{f_lat-delta},{f_lon+delta},{f_lat+delta}"
                     url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}&format=json&limit=25&lat={f_lat}&lon={f_lon}&viewbox={viewbox}&bounded=0"
@@ -163,7 +168,6 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
-                        # Строгая сортировка по возрастанию расстояния (ближайшие первыми)
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
