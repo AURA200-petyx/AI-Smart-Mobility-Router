@@ -33,7 +33,13 @@ class GroqAIRouter:
         
         ordered_points = pts.copy()
         
-        if optimization_mode in ["nearest", "tsp", "optimized", "true", "1"] and len(pts) > 2:
+        # Получаем общий режим из любого переданного параметра
+        opt_mode = str(optimization_mode or mode or "").lower().strip()
+        
+        # Если режим НЕ является последовательным (значит выбрана оптимизация / TSP) и точек больше 2
+        is_optimized = opt_mode not in ["sequence", "по порядку", "0", "false", "off", "none"]
+        
+        if is_optimized and len(pts) > 2:
             start = pts[0]
             unvisited = pts[1:]
             ordered = [start]
@@ -67,7 +73,6 @@ class GroqAIRouter:
         else:
             msg_clean = message.strip()
             
-            # Умный промпт с учетом опечаток и синонимов
             system_prompt = (
                 "You are an AI intent classifier for an urban navigation system in Minsk. "
                 "Classify the user input (which may contain typos, misspellings, or Russian words) "
@@ -105,7 +110,6 @@ class GroqAIRouter:
                     "reply": f"⚠️ Ошибка вызова Groq API: {str(e)}"
                 }
 
-            # Маппинг для надежного распознавания ответов модели с учетом опечаток
             category_mapping = {
                 "cafe": ["cafe", "кафе", "ресторан", "кофейня"],
                 "pharmacy": ["pharmacy", "аптека", "оптека", "обтека", "лекарств"],
@@ -137,7 +141,6 @@ class GroqAIRouter:
             target_info = osm_queries.get(category, {"tag": "amenity", "name": "Объект", "desc": "Городской объект."})
             cls._last_category_name = target_info["name"]
 
-            # Безопасное приведение координат пользователя
             try:
                 f_lat = float(lat) if lat is not None else 53.9006
                 f_lon = float(lon) if lon is not None else 27.5590
@@ -152,7 +155,6 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=8.0) as client:
-                    # Поиск строго вокруг координат пользователя (в радиусе видимости)
                     delta = 0.05
                     viewbox = f"{f_lon-delta},{f_lat-delta},{f_lon+delta},{f_lat+delta}"
                     
