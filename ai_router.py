@@ -137,9 +137,23 @@ class GroqAIRouter:
                 results = []
                 
                 with httpx.Client(timeout=8.0) as client:
-                    url = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=50"
+                    # ИЩЕМ СТРОГО ВОКРУГ КООРДИНАТ ПОЛЬЗОВАТЕЛЯ (параметры lat, lon, radius/viewbox)
+                    delta = 0.05  # примерно 5 км вокруг точки
+                    viewbox = f"{f_lon-delta},{f_lat-delta},{f_lon+delta},{f_lat+delta}"
+                    
+                    url = (
+                        f"https://nominatim.openstreetmap.org/search?"
+                        f"q={target_info['tag']}&format=json&limit=50"
+                        f"&lat={f_lat}&lon={f_lon}&viewbox={viewbox}&bounded=1"
+                    )
                     resp = client.get(url, headers=headers)
                     results = resp.json()
+
+                    # Если в узком радиусе ничего не нашлось, делаем расширенный поиск по Минску
+                    if not results:
+                        url_fallback = f"https://nominatim.openstreetmap.org/search?q={target_info['tag']}+Minsk&format=json&limit=50"
+                        resp = client.get(url_fallback, headers=headers)
+                        results = resp.json()
 
                     if results:
                         sorted_places = []
@@ -149,8 +163,7 @@ class GroqAIRouter:
                                 p_lon = float(place["lon"])
                                 dist = cls.calculate_distance(f_lat, f_lon, p_lat, p_lon)
                                 
-                                # ОТСЕКАЕМ ВСЁ, ЧТО ДАЛЬШЕ 30 КИЛОМЕТРОВ (исключаем баги геокодера со всей планеты)
-                                if dist <= 30000:
+                                if dist <= 30000: # фильтр до 30 км
                                     sorted_places.append({
                                         "place": place,
                                         "dist": dist,
@@ -159,6 +172,7 @@ class GroqAIRouter:
                             except (KeyError, ValueError):
                                 continue
                         
+                        # Жесткая сортировка: теперь Вариант 1 — это гарантированно САМАЯ БЛИЗКАЯ точка в метрах
                         sorted_places.sort(key=lambda x: x["dist"])
                         cls._last_results = sorted_places
                         cls._last_index = 0
